@@ -52,7 +52,14 @@ button:disabled {
 }
 
 .topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   margin-bottom: 18px;
+}
+
+.topbar > div {
+  flex: 1;
 }
 
 .eyebrow {
@@ -68,6 +75,23 @@ button:disabled {
   margin: 8px 0 0;
   font-size: 2.2rem;
   color: var(--primary);
+}
+
+.logout-btn {
+  background: var(--alert);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-weight: 600;
+  font-size: 14px;
+  align-self: center;
+  margin-top: 28px;
+}
+
+.logout-btn:hover {
+  background: #c9302c;
+  transform: translateY(-2px);
 }
 
 .tab-nav {
@@ -427,17 +451,18 @@ button:disabled {
 .schedule-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  background: linear-gradient(180deg, #fbfcff, #f5f9ff);
-  border-radius: 16px;
-  border: 1px solid var(--border);
-  padding: 16px;
+  gap: 20px;
+  background: linear-gradient(135deg, #fbfcff 0%, #f0f8ff 100%);
+  border-radius: 20px;
+  border: 2px solid #e8f0ff;
+  padding: 24px;
+  box-shadow: 0 8px 20px rgba(0, 102, 204, 0.08);
 }
 
 .field-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
 }
 
 label {
@@ -445,20 +470,142 @@ label {
   flex-direction: column;
   gap: 8px;
   font-weight: 600;
-  color: var(--text-dark);
+  color: var(--primary);
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-input, select {
-  border: 1px solid var(--border);
+input[type="time"], input[type="date"], input[type="text"], input[type="email"], input[type="password"], select {
+  border: 2px solid #e0e8ff;
   background: white;
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 12px;
+  padding: 12px 14px;
   font-size: 1rem;
   color: var(--text-dark);
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  border-radius: 4px;
+  margin-right: 4px;
+  opacity: 0.6;
+  filter: invert(0.3);
+}
+
+input[type="time"]::-webkit-calendar-picker-indicator:hover,
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+input[type="time"]:focus, 
+input[type="date"]:focus,
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+  background: #f8fbff;
+}
+
+.time-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  grid-column: 1 / -1;
+  margin-top: 4px;
+}
+
+.time-section > label {
+  font-weight: 600;
+  color: var(--primary);
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+
+.quick-hours {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+  padding: 12px;
+  background: linear-gradient(135deg, #fbfcff, #f5f9ff);
+  border-radius: 12px;
+  border: 2px solid #e8f0ff;
+}
+
+.hour-btn {
+  padding: 12px 8px;
+  border: 2px solid #e0e8ff;
+  background: white;
+  color: var(--text-dark);
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(0, 102, 204, 0.08);
+}
+
+.hour-btn:hover {
+  border-color: var(--primary);
+  background: #f0f8ff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0, 102, 204, 0.15);
+}
+
+.hour-btn.active {
+  background: linear-gradient(135deg, var(--primary), #1989ff);
+  color: white;
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(0, 102, 204, 0.25);
+}
+
+.hour-btn:disabled,
+.hour-btn.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #f5f5f5;
+  border-color: #ddd;
+  color: #999;
+}
+
+.hour-btn:disabled:hover,
+.hour-btn.disabled:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: #ddd;
 }
 
 .primary-submit {
   width: 100%;
+  background: linear-gradient(135deg, var(--primary), #1989ff);
+  color: white;
+  border: none;
+  padding: 14px 20px;
+  font-weight: 600;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 102, 204, 0.25);
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+.primary-submit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 102, 204, 0.35);
+}
+
+.primary-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #ccc;
 }
 
 .auth-hint {
@@ -469,11 +616,21 @@ input, select {
 }
 
 .location-controls {
-  margin-top: 8px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .location-search {
-  width: auto;
+  flex: 1;
+  min-width: 200px;
+  background: linear-gradient(135deg, var(--primary), #1989ff);
+  color: white;
+  border: none;
+  padding: 14px 20px;
+  font-weight: 600;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 102, 204, 0.25);
   min-width: 150px;
   padding: 10px 14px;
   margin: 0;
@@ -489,32 +646,46 @@ input, select {
 .location-results {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 10px;
+  margin-top: 16px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .location-result {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: 6px;
   width: 100%;
   text-align: left;
-  border: 1px solid var(--border);
-  background: #f8fbff;
+  border: 2px solid #e0e8ff;
+  background: linear-gradient(135deg, #fbfcff, #f5f9ff);
   color: var(--text-dark);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.location-result:hover {
+  border-color: var(--primary);
+  background: linear-gradient(135deg, #f0f8ff, #e8f2ff);
+  box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
+  transform: translateX(4px);
 }
 
 .location-result strong {
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   color: var(--primary);
+  font-weight: 700;
 }
 
 .location-result span {
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: #666;
+  display: flex;
+  gap: 8px;
 }
 
 .agenda-item {

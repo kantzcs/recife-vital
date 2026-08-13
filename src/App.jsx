@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { supabase, hasSupabaseConfig } from './lib/supabase';
 import './styles.css';
 
 const MAX_APPOINTMENTS = 4;
@@ -11,7 +12,35 @@ const initialRewards = [
   { id: 3, icon: '📚', title: 'Vaga Curso COMPAZ', cost: 300, redeemed: false },
 ];
 
+const RECIFE_HEALTH_LOCATIONS = [
+  { id: 1, name: 'IMIP', category: 'Hospital', area: 'Boa Vista, Recife - PE' },
+  { id: 2, name: 'Hospital Geral do Recife', category: 'Hospital', area: 'Boa Vista, Recife - PE' },
+  { id: 3, name: 'Hospital da Restauração', category: 'Hospital', area: 'Santo Amaro, Recife - PE' },
+  { id: 4, name: 'Unidade de Saúde da Várzea', category: 'Posto de Saúde', area: 'Várzea, Recife - PE' },
+  { id: 5, name: 'Posto de Saúde da Boa Viagem', category: 'Posto de Saúde', area: 'Boa Viagem, Recife - PE' },
+  { id: 6, name: 'Unidade de Saúde do Ibura', category: 'Posto de Saúde', area: 'Ibura, Recife - PE' },
+  { id: 7, name: 'Policlínica Dantas Barreto', category: 'Policlínica', area: 'Graças, Recife - PE' },
+  { id: 8, name: 'Unidade de Saúde do Pina', category: 'Posto de Saúde', area: 'Pina, Recife - PE' },
+];
+
+const normalizeLocationText = (value = '') =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
 const tabs = ['Início', 'Agenda', 'Recompensas'];
+
+const mapSupabaseAppointment = (appointment) => ({
+  id: appointment.id,
+  type: appointment.type,
+  date: appointment.date,
+  time: appointment.time,
+  location: appointment.location,
+  points: appointment.points ?? 0,
+  confirmed: Boolean(appointment.confirmed),
+});
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -32,12 +61,59 @@ export default function App() {
   const [locationResults, setLocationResults] = useState([]);
   const [locationError, setLocationError] = useState('');
   const [locationLoading, setLocationLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [appointmentError, setAppointmentError] = useState('');
+  const [profileId, setProfileId] = useState(null);
   const [form, setForm] = useState({
     type: 'Consulta',
     date: '',
     time: '',
     location: '',
   });
+
+  const isSupabaseEnabled = hasSupabaseConfig && Boolean(supabase);
+
+  // Verificar sessão existente ao montar o app
+  // Carregar pontos do localStorage ao montar (apenas uma vez)
+  useEffect(() => {
+    const savedPoints = localStorage.getItem('recife_vital_points');
+    if (savedPoints !== null) {
+      const parsedPoints = parseInt(savedPoints, 10);
+      if (!isNaN(parsedPoints) && parsedPoints >= 0) {
+        setPoints(parsedPoints);
+      }
+    }
+  }, []);
+
+  // Salvar pontos no localStorage sempre que mudam
+  useEffect(() => {
+    localStorage.setItem('recife_vital_points', points.toString());
+  }, [points]);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      if (!isSupabaseEnabled || !supabase) return;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        setProfileId(session.user.id);
+        await ensureSupabaseProfile(
+          session.user.id,
+          session.user.user_metadata?.name,
+          session.user.email
+        );
+        setAuthForm((current) => ({
+          ...current,
+          email: session.user.email || '',
+          name: session.user.user_metadata?.name || ''
+        }));
+        setIsLoggedIn(true);
+      }
+    };
+
+    checkSession();
+  }, [isSupabaseEnabled]);
 
   const pendingItems = useMemo(
     () => agenda.filter((item) => !item.confirmed),
@@ -50,6 +126,47 @@ export default function App() {
 
   const openConfirmation = (type, payload) => {
     setConfirmation({ type, ...payload });
+  };
+
+  const syncAgendaFromSupabase = async (userId) => {
+    if (!isSupabaseEnabled || !userId) return;
+
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return;
+    }
+
+    setAgenda((data ?? []).map(mapSupabaseAppointment));
+  };
+
+  const ensureSupabaseProfile = async (userId, userName, userEmail) => {
+    if (!isSupabaseEnabled || !userId) return;
+
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (!existingProfile) {
+      const { error } = await supabase.from('profiles').insert({
+        id: userId,
+        name: userName || userEmail?.split('@')[0] || 'Usuário',
+        email: userEmail,
+      });
+
+      if (error) {
+        return;
+      }
+    }
+
+    setProfileId(userId);
+    await syncAgendaFromSupabase(userId);
   };
 
   const handleConfirmPresence = (id) => {
@@ -86,58 +203,87 @@ export default function App() {
     setPoints((current) => current - selected.cost);
   };
 
-  const handleLocationSearch = async () => {
+  const handleLocationSearch = () => {
     const query = form.location.trim();
+
     if (!query) {
-      setLocationError('Digite o endereço da consulta para buscar.');
-      setLocationResults([]);
+      setLocationResults(RECIFE_HEALTH_LOCATIONS);
+      setLocationError('');
       return;
     }
 
-    setLocationLoading(true);
-    setLocationError('');
+    const normalizedQuery = normalizeLocationText(query);
+    const filtered = RECIFE_HEALTH_LOCATIONS.filter((place) =>
+      normalizeLocationText(`${place.name} ${place.category} ${place.area}`).includes(normalizedQuery)
+    );
 
-    try {
-      const url = new URL('https://nominatim.openstreetmap.org/search');
-      url.searchParams.set('format', 'jsonv2');
-      url.searchParams.set('limit', '5');
-      url.searchParams.set('countrycodes', 'br');
-      url.searchParams.set('addressdetails', '1');
-      url.searchParams.set('q', query);
+    setLocationResults(filtered);
 
-      const response = await fetch(url.toString(), {
-        headers: {
-          'Accept-Language': 'pt-BR',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Erro ao buscar local');
-      }
-
-      const data = await response.json();
-      const filtered = data.filter((place) => (place.address?.country_code || '').toLowerCase() === 'br');
-      setLocationResults(filtered);
-
-      if (!filtered.length) {
-        setLocationError('Nenhum endereço no Brasil foi encontrado para essa consulta.');
-      }
-    } catch (error) {
-      setLocationError('Não foi possível localizar o endereço da consulta no momento.');
-      setLocationResults([]);
-    } finally {
-      setLocationLoading(false);
+    if (!filtered.length) {
+      setLocationError('Nenhuma unidade de saúde em Recife com atendimento de consultas foi encontrada. Tente procurar por IMIP, Hospital Geral, Boa Viagem ou outra unidade da cidade.');
+      return;
     }
+
+    setLocationError('');
+  };
+
+  const isDateTimeValid = (date, time) => {
+    const appointmentDateTime = new Date(`${date}T${time}`);
+    const now = new Date();
+    return appointmentDateTime > now;
+  };
+
+  const getMinDate = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const handleTimeChange = (e) => {
+    let value = e.target.value.replace(/\D/g, ''); // Remove tudo que não é número
+    
+    if (value.length <= 2) {
+      value = value;
+    } else if (value.length <= 4) {
+      value = value.slice(0, 2) + ':' + value.slice(2);
+    } else {
+      value = value.slice(0, 2) + ':' + value.slice(2, 4);
+    }
+
+    setForm((current) => ({ ...current, time: value }));
+  };
+
+  const handleTimeBlur = () => {
+    if (form.time && form.time.length === 5) {
+      const [hours, minutes] = form.time.split(':');
+      const h = parseInt(hours, 10);
+      const m = parseInt(minutes, 10);
+      
+      if (h < 0 || h > 23 || m < 0 || m > 59) {
+        setAppointmentError('Hora inválida. Use o formato HH:MM (00:00 a 23:59)');
+        return;
+      }
+    }
+    setAppointmentError('');
   };
 
   const handleScheduleSubmit = (event) => {
     event.preventDefault();
+
+    setAppointmentError('');
 
     if (!form.date || !form.time || !form.location.trim()) {
       openConfirmation('validation', {
         title: 'Preencha os dados da consulta',
         message: 'Informe a data, o horário e o local antes de confirmar o agendamento.',
       });
+      return;
+    }
+
+    if (!isDateTimeValid(form.date, form.time)) {
+      setAppointmentError('A data e hora devem ser no futuro. Selecione uma data e hora posteriores ao momento atual.');
       return;
     }
 
@@ -162,7 +308,7 @@ export default function App() {
     });
   };
 
-  const handleConfirmationAction = () => {
+  const handleConfirmationAction = async () => {
     if (!confirmation) return;
 
     if (confirmation.type === 'validation') {
@@ -173,6 +319,21 @@ export default function App() {
     if (confirmation.type === 'presence') {
       const selected = agenda.find((item) => item.id === confirmation.id);
       if (selected && !selected.confirmed) {
+        if (isSupabaseEnabled && profileId && supabase) {
+          const { error } = await supabase
+            .from('appointments')
+            .update({ confirmed: true })
+            .eq('id', confirmation.id);
+
+          if (error) {
+            setAppointmentError('Não foi possível confirmar a presença no banco de dados.');
+            setConfirmation(null);
+            return;
+          }
+
+          await syncAgendaFromSupabase(profileId);
+        }
+
         setAgenda((current) =>
           current.map((item) =>
             item.id === confirmation.id ? { ...item, confirmed: true } : item
@@ -183,6 +344,17 @@ export default function App() {
     }
 
     if (confirmation.type === 'delete') {
+      if (isSupabaseEnabled && profileId && supabase) {
+        const { error } = await supabase.from('appointments').delete().eq('id', confirmation.id);
+        if (error) {
+          setAppointmentError('Não foi possível excluir o agendamento no banco de dados.');
+          setConfirmation(null);
+          return;
+        }
+
+        await syncAgendaFromSupabase(profileId);
+      }
+
       setAgenda((current) => current.filter((item) => item.id !== confirmation.id));
     }
 
@@ -193,7 +365,35 @@ export default function App() {
         confirmed: false,
       };
 
-      setAgenda((current) => [nextItem, ...current]);
+      if (isSupabaseEnabled && profileId && supabase) {
+        const { data, error } = await supabase
+          .from('appointments')
+          .insert({
+            user_id: profileId,
+            type: confirmation.payload.type,
+            date: confirmation.payload.date,
+            time: confirmation.payload.time,
+            location: confirmation.payload.location,
+            points: confirmation.payload.points,
+            confirmed: false,
+          })
+          .select();
+
+        if (error) {
+          setAppointmentError('Não foi possível salvar o agendamento no banco. Verifique os dados e tente novamente.');
+          setConfirmation(null);
+          return;
+        }
+
+        if (data?.[0]) {
+          setAgenda((current) => [mapSupabaseAppointment(data[0]), ...current]);
+        } else {
+          setAgenda((current) => [nextItem, ...current]);
+        }
+      } else {
+        setAgenda((current) => [nextItem, ...current]);
+      }
+
       setActiveTab('Agenda');
       setSelectedCard('agenda');
       setForm({
@@ -207,36 +407,133 @@ export default function App() {
     setConfirmation(null);
   };
 
-  const handleAuthSubmit = (event) => {
+  const handleAuthSubmit = async (event) => {
     event.preventDefault();
+
+    if (isSupabaseEnabled && supabase) {
+      try {
+        if (authMode === 'signup') {
+          if (!authForm.name.trim() || !authForm.email.trim() || !authForm.password || !authForm.confirmPassword) {
+            setAuthError('Preencha todos os campos para criar a conta.');
+            return;
+          }
+
+          if (authForm.password !== authForm.confirmPassword) {
+            setAuthError('As senhas não conferem.');
+            return;
+          }
+
+          const { data, error } = await supabase.auth.signUp({
+            email: authForm.email.trim(),
+            password: authForm.password,
+            options: {
+              data: {
+                name: authForm.name.trim(),
+              },
+            },
+          });
+
+          if (error) {
+            setAuthError(error.message);
+            return;
+          }
+
+          const user = data?.user;
+          if (user) {
+            await ensureSupabaseProfile(user.id, user.user_metadata?.name || authForm.name, user.email);
+          }
+
+          setAuthError('');
+          setIsLoggedIn(true);
+          setAuthForm((current) => ({ ...current, password: '', confirmPassword: '' }));
+          return;
+        }
+
+        if (!authForm.email.trim() || !authForm.password) {
+          setAuthError('Informe e-mail e senha para entrar.');
+          return;
+        }
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: authForm.email.trim(),
+          password: authForm.password,
+        });
+
+        if (error) {
+          setAuthError(error.message || 'Não foi possível fazer login. Verifique as credenciais.');
+          setAuthMode('signup');
+          return;
+        }
+
+        const user = data?.user;
+        if (user) {
+          await ensureSupabaseProfile(user.id, user.user_metadata?.name || authForm.name, user.email);
+        }
+
+        setAuthError('');
+        setIsLoggedIn(true);
+        setAuthForm((current) => ({ ...current, password: '', confirmPassword: '' }));
+        return;
+      } catch (error) {
+        setAuthError('Não foi possível entrar com o banco de dados.');
+        return;
+      }
+    }
 
     if (authMode === 'signup') {
       if (!authForm.name.trim() || !authForm.email.trim() || !authForm.password || !authForm.confirmPassword) {
+        setAuthError('Preencha todos os campos para criar a conta.');
         return;
       }
 
       if (authForm.password !== authForm.confirmPassword) {
+        setAuthError('As senhas não conferem.');
         return;
       }
 
+      setAuthError('');
       setIsLoggedIn(true);
       setAuthForm((current) => ({ ...current, password: '', confirmPassword: '' }));
       return;
     }
 
     if (!authForm.email.trim() || !authForm.password) {
+      setAuthError('Informe e-mail e senha para continuar.');
       return;
     }
 
     const hasAccount = authForm.email.trim().toLowerCase() === 'usuario@recifevital.com' && authForm.password === '123456';
     if (!hasAccount) {
+      setAuthError('Conta não encontrada. Crie uma conta ou use o e-mail e senha corretos.');
       setAuthMode('signup');
       setAuthForm((current) => ({ ...current, password: '', confirmPassword: '' }));
       return;
     }
 
+    setAuthError('');
+
     setIsLoggedIn(true);
     setAuthForm((current) => ({ ...current, password: '', confirmPassword: '' }));
+  };
+
+  const handleLogout = async () => {
+    if (isSupabaseEnabled && supabase) {
+      await supabase.auth.signOut();
+    }
+
+    setIsLoggedIn(false);
+    setAuthMode('login');
+    setProfileId(null);
+    setAgenda([]);
+    setPoints(0);
+    setAuthForm({
+      name: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+    });
+    setAuthError('');
+    setAppointmentError('');
   };
 
   const handleQuickAction = (action) => {
@@ -355,6 +652,8 @@ export default function App() {
         </div>
 
         <form className="auth-form" onSubmit={handleAuthSubmit}>
+          {authError && <p className="location-error">{authError}</p>}
+
           {authMode === 'signup' && (
             <label>
               Nome
@@ -492,6 +791,7 @@ export default function App() {
             Data
             <input
               type="date"
+              min={getMinDate()}
               value={form.date}
               onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
             />
@@ -500,9 +800,13 @@ export default function App() {
           <label>
             Horário
             <input
-              type="time"
+              type="text"
               value={form.time}
-              onChange={(event) => setForm((current) => ({ ...current, time: event.target.value }))}
+              onChange={handleTimeChange}
+              onBlur={handleTimeBlur}
+              placeholder="HH:MM"
+              maxLength="5"
+              className="time-input"
             />
           </label>
 
@@ -512,18 +816,19 @@ export default function App() {
               type="text"
               value={form.location}
               onChange={(event) => setForm((current) => ({ ...current, location: event.target.value }))}
-              placeholder="Digite o endereço da consulta"
+              placeholder="Digite o nome da unidade em Recife"
             />
           </label>
         </div>
 
         <div className="location-controls">
-          <button type="button" className="secondary location-search" onClick={handleLocationSearch} disabled={locationLoading}>
-            {locationLoading ? 'Buscando...' : 'Buscar endereço'}
+          <button type="button" className="secondary location-search" onClick={handleLocationSearch}>
+            Buscar unidade
           </button>
         </div>
 
         {locationError && <p className="location-error">{locationError}</p>}
+        {appointmentError && <p className="location-error">{appointmentError}</p>}
 
         {locationResults.length > 0 && (
           <div className="location-results">
@@ -533,14 +838,13 @@ export default function App() {
                 key={place.place_id || `${place.lat}-${place.lon}`}
                 className="location-result"
                 onClick={() => {
-                  const shortLabel = place.address?.road || place.address?.suburb || place.address?.city || place.display_name.split(',')[0];
-                  setForm((current) => ({ ...current, location: shortLabel }));
+                  setForm((current) => ({ ...current, location: place.name }));
                   setLocationResults([]);
                   setLocationError('');
                 }}
               >
-                <strong>{place.address?.road || place.address?.suburb || place.display_name.split(',')[0]}</strong>
-                <span>{place.display_name}</span>
+                <strong>{place.name}</strong>
+                <span>{place.category} • {place.area}</span>
               </button>
             ))}
           </div>
@@ -622,6 +926,9 @@ export default function App() {
           <p className="eyebrow">Recife Vital</p>
           <h1>Olá, {authForm.name || 'usuário'}!</h1>
         </div>
+        <button className="logout-btn" onClick={handleLogout}>
+          Sair
+        </button>
       </header>
 
       <nav className="tab-nav" aria-label="Navegação principal">
