@@ -1,0 +1,2629 @@
+
+
+==================== src/App.jsx ====================
+import { useEffect, useMemo, useState } from "react";
+import { hasSupabaseConfig, supabase } from "./lib/supabase";
+import "./styles.css";
+
+const MAX_APPOINTMENTS = 4;
+
+const initialAgenda = [];
+
+const initialRewards = [
+  {
+    id: 1,
+    icon: "🚌",
+    title: "Crédito no VEM",
+    cost: 200,
+    redeemed: false,
+  },
+  {
+    id: 2,
+    icon: "🎬",
+    title: "Ingresso Cinema/Teatro",
+    cost: 150,
+    redeemed: false,
+  },
+  {
+    id: 3,
+    icon: "📚",
+    title: "Vaga em Curso COMPAZ",
+    cost: 300,
+    redeemed: false,
+  },
+];
+
+const RECIFE_HEALTH_LOCATIONS = [
+  {
+    id: 1,
+    name: "UPA Torrões",
+    category: "Urgência e emergência",
+    area: "Rua Mirabela, 30, Torrões, Recife - PE",
+    hours: "Aberto 24 horas, todos os dias",
+  },
+  {
+    id: 2,
+    name: "UPA Caxangá",
+    category: "Urgência e emergência",
+    area: "Avenida Caxangá, Iputinga, Recife - PE",
+    hours: "Aberto 24 horas, todos os dias",
+  },
+  {
+    id: 3,
+    name: "UPA Ibura",
+    category: "Urgência e emergência",
+    area: "Ibura, Recife - PE",
+    hours: "Aberto 24 horas, todos os dias",
+  },
+];
+
+const tabs = ["Início", "Agenda", "Recompensas"];
+
+const normalizeLocationText = (value) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+const mapSupabaseAppointment = (appointment) => ({
+  id: appointment.id,
+  type: appointment.type,
+  date: appointment.date,
+  time: appointment.time,
+  location: appointment.location,
+  points: appointment.points ?? 0,
+  confirmed: Boolean(appointment.confirmed),
+});
+
+export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
+  const [authForm, setAuthForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+  });
+
+  const [activeTab, setActiveTab] = useState("Início");
+  const [showDetails, setShowDetails] = useState(false);
+  const [selectedCard, setSelectedCard] = useState("home");
+
+  const [points, setPoints] = useState(0);
+  const [rewards, setRewards] = useState(initialRewards);
+  const [rewardsLoaded, setRewardsLoaded] = useState(false);
+
+  const [agenda, setAgenda] = useState(initialAgenda);
+  const [confirmation, setConfirmation] = useState(null);
+
+  const [locationResults, setLocationResults] = useState([]);
+  const [selectedLocation, setSelectedLocation] = useState(null);
+  const [locationError, setLocationError] = useState("");
+  const [appointmentError, setAppointmentError] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [profileId, setProfileId] = useState(null);
+
+  const [form, setForm] = useState({
+    type: "Consulta",
+    date: "",
+    time: "",
+    location: "",
+  });
+
+  const isSupabaseEnabled = hasSupabaseConfig && Boolean(supabase);
+
+  const pendingItems = useMemo(
+    () => agenda.filter((item) => !item.confirmed),
+    [agenda]
+  );
+
+  const activeAppointments = agenda.length;
+  const limitReached = activeAppointments >= MAX_APPOINTMENTS;
+
+  const nextLevelProgress = useMemo(
+    () => Math.min((points / 500) * 100, 100),
+    [points]
+  );
+
+  const openConfirmation = (type, payload = {}) => {
+    setConfirmation({ type, ...payload });
+  };
+
+  const formatDate = (value) => {
+    if (!value) return "";
+
+    const date = new Date(`${value}T12:00:00`);
+
+    return date.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
+
+  const getMinDate = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  };
+
+  const isDateTimeValid = (date, time) => {
+    if (!date || !time || time.length !== 5) return false;
+
+    const appointmentDateTime = new Date(`${date}T${time}:00`);
+    return appointmentDateTime > new Date();
+  };
+
+  const syncAgendaFromSupabase = async (userId) => {
+    if (!isSupabaseEnabled || !supabase || !userId) return;
+
+    const { data, error } = await supabase
+      .from("appointments")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setAppointmentError("Não foi possível carregar seus agendamentos.");
+      return;
+    }
+
+    setAgenda((data ?? []).map(mapSupabaseAppointment));
+  };
+
+  const syncRewardsFromSupabase = async (userId) => {
+    if (!isSupabaseEnabled || !supabase || !userId) {
+      setRewardsLoaded(true);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("user_rewards")
+      .select("points, redeemed_rewards")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      setAppointmentError(
+        "Não foi possível carregar seus pontos. Verifique a tabela user_rewards no Supabase."
+      );
+      setRewardsLoaded(true);
+      return;
+    }
+
+    if (!data) {
+      const { error: insertError } = await supabase
+        .from("user_rewards")
+        .insert({
+          user_id: userId,
+          points: 0,
+          redeemed_rewards: [],
+        });
+
+      if (insertError) {
+        setAppointmentError(
+          "Não foi possível criar seu saldo. Verifique as políticas da tabela user_rewards."
+        );
+      }
+
+      setPoints(0);
+      setRewards(initialRewards);
+      setRewardsLoaded(true);
+      return;
+    }
+
+    const redeemedIds = Array.isArray(data.redeemed_rewards)
+      ? data.redeemed_rewards
+      : [];
+
+    setPoints(data.points ?? 0);
+
+    setRewards(
+      initialRewards.map((reward) => ({
+        ...reward,
+        redeemed: redeemedIds.includes(reward.id),
+      }))
+    );
+
+    setRewardsLoaded(true);
+  };
+
+  const saveRewardsToSupabase = async (nextPoints, nextRewards) => {
+    if (!isSupabaseEnabled || !supabase || !profileId) {
+      return true;
+    }
+
+    const redeemedIds = nextRewards
+      .filter((reward) => reward.redeemed)
+      .map((reward) => reward.id);
+
+    const { error } = await supabase.from("user_rewards").upsert(
+      {
+        user_id: profileId,
+        points: nextPoints,
+        redeemed_rewards: redeemedIds,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: "user_id",
+      }
+    );
+
+    if (error) {
+      setAppointmentError(
+        "Não foi possível salvar os pontos no Supabase. Tente novamente."
+      );
+      return false;
+    }
+
+    return true;
+  };
+
+  const ensureSupabaseProfile = async (userId, userName, userEmail) => {
+    if (!isSupabaseEnabled || !supabase || !userId) return;
+
+    const { data: existingProfile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (profileError) {
+      setAuthError("Não foi possível acessar o perfil no Supabase.");
+      return;
+    }
+
+    if (!existingProfile) {
+      const { error: insertError } = await supabase.from("profiles").insert({
+        id: userId,
+        name: userName || userEmail?.split("@")[0] || "Usuário",
+        email: userEmail,
+      });
+
+      if (insertError) {
+        setAuthError("Não foi possível criar o perfil no Supabase.");
+        return;
+      }
+    }
+
+    setProfileId(userId);
+    await syncAgendaFromSupabase(userId);
+    await syncRewardsFromSupabase(userId);
+  };
+
+  useEffect(() => {
+    const checkSession = async () => {
+      if (!isSupabaseEnabled || !supabase) return;
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.user) return;
+
+      const user = session.user;
+
+      setAuthForm((current) => ({
+        ...current,
+        email: user.email ?? "",
+        name: user.user_metadata?.name ?? "",
+      }));
+
+      await ensureSupabaseProfile(
+        user.id,
+        user.user_metadata?.name,
+        user.email
+      );
+
+      setIsLoggedIn(true);
+    };
+
+    checkSession();
+  }, [isSupabaseEnabled]);
+
+  const handleAuthSubmit = async (event) => {
+    event.preventDefault();
+    setAuthError("");
+
+    if (!authForm.email.trim() || !authForm.password) {
+      setAuthError("Informe e-mail e senha para continuar.");
+      return;
+    }
+
+    if (authMode === "signup") {
+      if (!authForm.name.trim() || !authForm.confirmPassword) {
+        setAuthError("Preencha todos os campos para criar a conta.");
+        return;
+      }
+
+      if (authForm.password !== authForm.confirmPassword) {
+        setAuthError("As senhas não conferem.");
+        return;
+      }
+    }
+
+    if (!isSupabaseEnabled || !supabase) {
+      if (authMode === "signup") {
+        setIsLoggedIn(true);
+        setAuthForm((current) => ({
+          ...current,
+          password: "",
+          confirmPassword: "",
+        }));
+        return;
+      }
+
+      const isTestAccount =
+        authForm.email.trim().toLowerCase() === "usuario@recifevital.com" &&
+        authForm.password === "123456";
+
+      if (!isTestAccount) {
+        setAuthError(
+          "Conta não encontrada. Use usuario@recifevital.com e senha 123456 ou crie uma conta."
+        );
+        return;
+      }
+
+      setIsLoggedIn(true);
+      setAuthForm((current) => ({
+        ...current,
+        name: current.name || "Usuário",
+        password: "",
+        confirmPassword: "",
+      }));
+      return;
+    }
+
+    try {
+      if (authMode === "signup") {
+        const { data, error } = await supabase.auth.signUp({
+          email: authForm.email.trim(),
+          password: authForm.password,
+          options: {
+            data: {
+              name: authForm.name.trim(),
+            },
+          },
+        });
+
+        if (error) {
+          setAuthError(error.message);
+          return;
+        }
+
+        const user = data.user;
+
+        if (user) {
+          await ensureSupabaseProfile(
+            user.id,
+            user.user_metadata?.name || authForm.name,
+            user.email
+          );
+
+          setIsLoggedIn(true);
+        }
+
+        setAuthForm((current) => ({
+          ...current,
+          password: "",
+          confirmPassword: "",
+        }));
+
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: authForm.email.trim(),
+        password: authForm.password,
+      });
+
+      if (error) {
+        setAuthError("Não foi possível fazer login. Verifique as credenciais.");
+        return;
+      }
+
+      const user = data.user;
+
+      if (user) {
+        setAuthForm((current) => ({
+          ...current,
+          name: user.user_metadata?.name || current.name || "Usuário",
+          email: user.email ?? current.email,
+          password: "",
+          confirmPassword: "",
+        }));
+
+        await ensureSupabaseProfile(
+          user.id,
+          user.user_metadata?.name,
+          user.email
+        );
+
+        setIsLoggedIn(true);
+      }
+    } catch {
+      setAuthError("Não foi possível conectar ao Supabase.");
+    }
+  };
+
+  const handleLogout = async () => {
+    if (isSupabaseEnabled && supabase) {
+      await supabase.auth.signOut();
+    }
+
+    setIsLoggedIn(false);
+    setAuthMode("login");
+    setProfileId(null);
+    setAgenda(initialAgenda);
+    setPoints(0);
+    setRewards(initialRewards);
+    setRewardsLoaded(false);
+    setLocationResults([]);
+    setSelectedLocation(null);
+    setAuthForm({
+      name: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+    });
+    setAuthError("");
+    setAppointmentError("");
+  };
+
+  const handleQuickAction = (action) => {
+    setSelectedCard(action);
+
+    if (action === "details") {
+      setShowDetails((value) => !value);
+      return;
+    }
+
+    if (action === "agenda") {
+      setActiveTab("Agenda");
+      return;
+    }
+
+    if (action === "rewards") {
+      setActiveTab("Recompensas");
+      return;
+    }
+
+    setActiveTab("Início");
+  };
+
+  const handleLocationSearch = () => {
+    const query = form.location.trim();
+
+    setLocationError("");
+    setSelectedLocation(null);
+
+    if (!query) {
+      setLocationResults(RECIFE_HEALTH_LOCATIONS);
+      return;
+    }
+
+    const normalizedQuery = normalizeLocationText(query);
+
+    const filtered = RECIFE_HEALTH_LOCATIONS.filter((place) => {
+      const searchText = `${place.name} ${place.category} ${place.area}`;
+      return normalizeLocationText(searchText).includes(normalizedQuery);
+    });
+
+    setLocationResults(filtered);
+
+    if (!filtered.length) {
+      setLocationError(
+        "Nenhuma UPA foi encontrada. Pesquise por Torrões, Caxangá ou Ibura."
+      );
+    }
+  };
+
+  const handleTimeChange = (event) => {
+    let value = event.target.value.replace(/\D/g, "");
+
+    if (value.length > 2) {
+      value = `${value.slice(0, 2)}:${value.slice(2, 4)}`;
+    }
+
+    setForm((current) => ({
+      ...current,
+      time: value.slice(0, 5),
+    }));
+  };
+
+  const handleTimeBlur = () => {
+    if (!form.time) return;
+
+    if (form.time.length !== 5) {
+      setAppointmentError("Hora inválida. Use o formato HH:MM.");
+      return;
+    }
+
+    const [hours, minutes] = form.time.split(":");
+    const hour = Number(hours);
+    const minute = Number(minutes);
+
+    if (hour > 23 || minute > 59) {
+      setAppointmentError("Hora inválida. Use valores entre 00:00 e 23:59.");
+      return;
+    }
+
+    setAppointmentError("");
+  };
+
+  const handleScheduleSubmit = (event) => {
+    event.preventDefault();
+    setAppointmentError("");
+
+    if (!form.date || !form.time || !selectedLocation) {
+      openConfirmation("validation", {
+        title: "Dados incompletos",
+        message:
+          "Informe data, horário e selecione uma UPA da lista antes de confirmar.",
+      });
+      return;
+    }
+
+    if (!isDateTimeValid(form.date, form.time)) {
+      setAppointmentError(
+        "A data e o horário devem ser posteriores ao momento atual."
+      );
+      return;
+    }
+
+    if (limitReached) {
+      openConfirmation("limit", {
+        title: "Limite de consultas atingido",
+        message: `Você já possui ${activeAppointments} atendimentos ativos. Exclua um para criar outro.`,
+      });
+      return;
+    }
+
+    const earnedPoints =
+      form.type === "Consulta"
+        ? 50
+        : form.type === "Retirada"
+          ? 30
+          : 40;
+
+    openConfirmation("schedule", {
+      title: "Confirmar agendamento",
+      message: `Deseja criar ${form.type} para ${formatDate(form.date)} às ${form.time}?`,
+      payload: {
+        type: form.type,
+        date: formatDate(form.date),
+        time: form.time,
+        location: selectedLocation.name,
+        points: earnedPoints,
+      },
+    });
+  };
+
+  const handleConfirmPresence = (id) => {
+    const selected = agenda.find((item) => item.id === id);
+
+    if (!selected || selected.confirmed) return;
+
+    openConfirmation("presence", {
+      id,
+      title: "Confirmar presença",
+      message: `Deseja confirmar sua presença em ${selected.type} de ${selected.date}? Você receberá ${selected.points} pontos.`,
+    });
+  };
+
+  const handleDeleteAppointment = (id) => {
+    const selected = agenda.find((item) => item.id === id);
+
+    if (!selected) return;
+
+    openConfirmation("delete", {
+      id,
+      title: "Excluir agendamento",
+      message: `Essa ação remove ${selected.type} de ${selected.date} e não pode ser desfeita.`,
+    });
+  };
+
+  const handleRedeem = async (rewardId) => {
+    const selected = rewards.find((item) => item.id === rewardId);
+
+    if (!selected || selected.redeemed || points < selected.cost) {
+      return;
+    }
+
+    const nextPoints = points - selected.cost;
+
+    const nextRewards = rewards.map((item) =>
+      item.id === rewardId
+        ? { ...item, redeemed: true }
+        : item
+    );
+
+    setPoints(nextPoints);
+    setRewards(nextRewards);
+
+    const saved = await saveRewardsToSupabase(nextPoints, nextRewards);
+
+    if (!saved) {
+      setPoints(points);
+      setRewards(rewards);
+    }
+  };
+
+  const handleConfirmationAction = async () => {
+    if (!confirmation) return;
+
+    if (confirmation.type === "validation" || confirmation.type === "limit") {
+      setConfirmation(null);
+      return;
+    }
+
+    if (confirmation.type === "presence") {
+      const selected = agenda.find((item) => item.id === confirmation.id);
+
+      if (!selected || selected.confirmed) {
+        setConfirmation(null);
+        return;
+      }
+
+      if (isSupabaseEnabled && supabase && profileId) {
+        const { error } = await supabase
+          .from("appointments")
+          .update({ confirmed: true })
+          .eq("id", confirmation.id)
+          .eq("user_id", profileId);
+
+        if (error) {
+          setAppointmentError(
+            "Não foi possível confirmar a presença no Supabase."
+          );
+          setConfirmation(null);
+          return;
+        }
+      }
+
+      const nextPoints = points + selected.points;
+      const nextAgenda = agenda.map((item) =>
+        item.id === confirmation.id
+          ? { ...item, confirmed: true }
+          : item
+      );
+
+      setAgenda(nextAgenda);
+      setPoints(nextPoints);
+
+      const saved = await saveRewardsToSupabase(nextPoints, rewards);
+
+      if (!saved) {
+        setPoints(points);
+        setAgenda(agenda);
+        setConfirmation(null);
+        return;
+      }
+
+      if (isSupabaseEnabled && profileId) {
+        await syncAgendaFromSupabase(profileId);
+      }
+
+      setConfirmation(null);
+      return;
+    }
+
+    if (confirmation.type === "delete") {
+      if (isSupabaseEnabled && supabase && profileId) {
+        const { error } = await supabase
+          .from("appointments")
+          .delete()
+          .eq("id", confirmation.id)
+          .eq("user_id", profileId);
+
+        if (error) {
+          setAppointmentError(
+            "Não foi possível excluir o agendamento no Supabase."
+          );
+          setConfirmation(null);
+          return;
+        }
+
+        await syncAgendaFromSupabase(profileId);
+      } else {
+        setAgenda((current) =>
+          current.filter((item) => item.id !== confirmation.id)
+        );
+      }
+
+      setConfirmation(null);
+      return;
+    }
+
+    if (confirmation.type === "schedule") {
+      const nextItem = {
+        id: Date.now(),
+        ...confirmation.payload,
+        confirmed: false,
+      };
+
+      if (isSupabaseEnabled && supabase && profileId) {
+        const { data, error } = await supabase
+          .from("appointments")
+          .insert({
+            user_id: profileId,
+            type: confirmation.payload.type,
+            date: confirmation.payload.date,
+            time: confirmation.payload.time,
+            location: confirmation.payload.location,
+            points: confirmation.payload.points,
+            confirmed: false,
+          })
+          .select()
+          .single();
+
+        if (error) {
+          setAppointmentError(
+            "Não foi possível salvar o agendamento no Supabase."
+          );
+          setConfirmation(null);
+          return;
+        }
+
+        setAgenda((current) => [
+          mapSupabaseAppointment(data),
+          ...current,
+        ]);
+      } else {
+        setAgenda((current) => [nextItem, ...current]);
+      }
+
+      setActiveTab("Agenda");
+      setSelectedCard("agenda");
+      setForm({
+        type: "Consulta",
+        date: "",
+        time: "",
+        location: "",
+      });
+      setSelectedLocation(null);
+      setLocationResults([]);
+      setLocationError("");
+      setConfirmation(null);
+    }
+  };
+
+  const nextAppointment = agenda[0] ?? null;
+
+  const renderAuthScreen = () => (
+    <div className="auth-shell">
+      <div className="auth-card">
+        <div className="auth-brand">
+          <p className="eyebrow">Recife Vital</p>
+          <h2>{authMode === "login" ? "Entrar" : "Criar conta"}</h2>
+        </div>
+
+        <form className="auth-form" onSubmit={handleAuthSubmit}>
+          {authError && <p className="location-error">{authError}</p>}
+
+          {authMode === "signup" && (
+            <label>
+              Nome
+              <input
+                type="text"
+                value={authForm.name}
+                onChange={(event) =>
+                  setAuthForm((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+                placeholder="Seu nome"
+                required
+              />
+            </label>
+          )}
+
+          <label>
+            E-mail
+            <input
+              type="email"
+              value={authForm.email}
+              onChange={(event) =>
+                setAuthForm((current) => ({
+                  ...current,
+                  email: event.target.value,
+                }))
+              }
+              placeholder="seuemail@exemplo.com"
+              required
+            />
+          </label>
+
+          <label>
+            Senha
+            <input
+              type="password"
+              value={authForm.password}
+              onChange={(event) =>
+                setAuthForm((current) => ({
+                  ...current,
+                  password: event.target.value,
+                }))
+              }
+              placeholder="Sua senha"
+              required
+            />
+          </label>
+
+          {authMode === "signup" && (
+            <label>
+              Confirmar senha
+              <input
+                type="password"
+                value={authForm.confirmPassword}
+                onChange={(event) =>
+                  setAuthForm((current) => ({
+                    ...current,
+                    confirmPassword: event.target.value,
+                  }))
+                }
+                placeholder="Repita sua senha"
+                required
+              />
+            </label>
+          )}
+
+          <button type="submit" className="primary-submit auth-submit">
+            {authMode === "login" ? "Entrar" : "Cadastrar"}
+          </button>
+        </form>
+
+        <p className="auth-hint">
+          {authMode === "login"
+            ? "Entre para acompanhar sua agenda, pontos e recompensas."
+            : "Crie sua conta para registrar atendimentos e acumular pontos."}
+        </p>
+
+        <div className="auth-switch">
+          <span>
+            {authMode === "login"
+              ? "Ainda não tem conta?"
+              : "Já tem uma conta?"}
+          </span>
+
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setAuthError("");
+              setAuthMode((current) =>
+                current === "login" ? "signup" : "login"
+              );
+            }}
+          >
+            {authMode === "login" ? "Cadastre-se" : "Fazer login"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderHome = () => (
+    <>
+      <section className="hero-card">
+        <div className="hero-header">
+          <span className="tag">PRÓXIMA CONSULTA</span>
+
+          <button
+            className="mini-button"
+            onClick={() => handleQuickAction("details")}
+          >
+            {showDetails ? "Ocultar detalhes" : "Ver detalhes"}
+          </button>
+        </div>
+
+        <h2>
+          {nextAppointment
+            ? `${nextAppointment.date} - ${nextAppointment.time}`
+            : "Sem consulta agendada"}
+        </h2>
+
+        <p className="home-location">
+          {nextAppointment
+            ? nextAppointment.location
+            : "Defina uma UPA para o seu próximo atendimento"}
+        </p>
+
+        {showDetails && (
+          <div className="details-box">
+            <p>
+              {nextAppointment
+                ? "Atendimento agendado. Compareça no horário informado."
+                : "Ainda não há atendimento cadastrado."}
+            </p>
+
+            <p>
+              {nextAppointment
+                ? `${nextAppointment.type} em ${nextAppointment.location}.`
+                : "Abra a agenda para realizar seu primeiro agendamento."}
+            </p>
+          </div>
+        )}
+      </section>
+
+      <section className="quick-actions">
+        <button
+          className={
+            selectedCard === "agenda"
+              ? "quick-card active"
+              : "quick-card"
+          }
+          onClick={() => handleQuickAction("agenda")}
+        >
+          <span>📅</span>
+          <strong>Agendar</strong>
+        </button>
+
+        <button
+          className={
+            selectedCard === "rewards"
+              ? "quick-card active"
+              : "quick-card"
+          }
+          onClick={() => handleQuickAction("rewards")}
+        >
+          <span>🎁</span>
+          <strong>Recompensas</strong>
+        </button>
+
+        <button
+          className={
+            selectedCard === "home"
+              ? "quick-card active"
+              : "quick-card"
+          }
+          onClick={() => handleQuickAction("home")}
+        >
+          <span>📊</span>
+          <strong>Resumo</strong>
+        </button>
+      </section>
+
+      <section className="stats-grid">
+        <button
+          className="stat-card points"
+          onClick={() => handleQuickAction("rewards")}
+        >
+          <span>🪙</span>
+          <strong>{points} pts</strong>
+          <small>Saldo Recife Saudável</small>
+        </button>
+
+        <button
+          className="stat-card blue"
+          onClick={() => handleQuickAction("agenda")}
+        >
+          <span>⏳</span>
+          <strong>{pendingItems.length}</strong>
+          <small>Pendências em aberto</small>
+        </button>
+
+        <button
+          className="stat-card green"
+          onClick={() => handleQuickAction("agenda")}
+        >
+          <span>🩺</span>
+          <strong>
+            {Math.min(activeAppointments, MAX_APPOINTMENTS)}/
+            {MAX_APPOINTMENTS}
+          </strong>
+          <small>Consultas ativas</small>
+        </button>
+
+        <button
+          className="stat-card red"
+          onClick={() => handleQuickAction("agenda")}
+        >
+          <span>✅</span>
+          <strong>
+            {pendingItems.length === 0
+              ? "Tudo ok"
+              : `${pendingItems.length} pendente${
+                  pendingItems.length === 1 ? "" : "s"
+                }`}
+          </strong>
+          <small>Controle de atenções</small>
+        </button>
+      </section>
+    </>
+  );
+
+  const renderAgenda = () => (
+    <section className="panel panel-stack">
+      <div className="panel-header">
+        <h3>Sua Agenda</h3>
+
+        <button
+          className="mini-button"
+          onClick={() => handleQuickAction("home")}
+        >
+          Voltar ao início
+        </button>
+      </div>
+
+      <div className="status-banner">
+        <span>Limite de agendamentos</span>
+        <strong>
+          {activeAppointments}/{MAX_APPOINTMENTS}
+        </strong>
+      </div>
+
+      <div className="pending-panel">
+        <div className="pending-head">
+          <h4>Pendências</h4>
+          <span className="pending-badge">{pendingItems.length}</span>
+        </div>
+
+        {pendingItems.length === 0 ? (
+          <p className="empty-state">Nenhuma pendência por enquanto.</p>
+        ) : (
+          pendingItems.map((item) => (
+            <div className="pending-item" key={item.id}>
+              <div>
+                <strong>{item.type}</strong>
+                <p>
+                  {item.date} às {item.time}
+                </p>
+              </div>
+
+              <div className="pending-actions">
+                <button
+                  className="small-button success"
+                  onClick={() => handleConfirmPresence(item.id)}
+                >
+                  Confirmar
+                </button>
+
+                <button
+                  className="small-button danger"
+                  onClick={() => handleDeleteAppointment(item.id)}
+                >
+                  Excluir
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <form className="schedule-form" onSubmit={handleScheduleSubmit}>
+        <div className="field-grid">
+          <label>
+            Tipo
+            <select
+              value={form.type}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  type: event.target.value,
+                }))
+              }
+            >
+              <option value="Consulta">Consulta</option>
+              <option value="Retirada">Retirada</option>
+              <option value="Exame">Exame</option>
+            </select>
+          </label>
+
+          <label>
+            Data
+            <input
+              type="date"
+              min={getMinDate()}
+              value={form.date}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  date: event.target.value,
+                }))
+              }
+            />
+          </label>
+
+          <label>
+            Horário
+            <input
+              type="text"
+              value={form.time}
+              onChange={handleTimeChange}
+              onBlur={handleTimeBlur}
+              placeholder="HH:MM"
+              maxLength={5}
+              className="time-input"
+            />
+          </label>
+
+          <label>
+            Local
+            <input
+              type="text"
+              value={form.location}
+              onChange={(event) => {
+                setForm((current) => ({
+                  ...current,
+                  location: event.target.value,
+                }));
+                setSelectedLocation(null);
+                setLocationResults([]);
+                setLocationError("");
+              }}
+              placeholder="Pesquise e selecione uma UPA"
+            />
+          </label>
+        </div>
+
+        <div className="location-controls">
+          <button
+            type="button"
+            className="secondary location-search"
+            onClick={handleLocationSearch}
+          >
+            Buscar UPA
+          </button>
+        </div>
+
+        {locationError && (
+          <p className="location-error">{locationError}</p>
+        )}
+
+        {appointmentError && (
+          <p className="location-error">{appointmentError}</p>
+        )}
+
+        {locationResults.length > 0 && (
+          <div className="location-results">
+            {locationResults.map((place) => (
+              <button
+                type="button"
+                key={place.id}
+                className="location-result"
+                onClick={() => {
+                  setForm((current) => ({
+                    ...current,
+                    location: place.name,
+                  }));
+                  setSelectedLocation(place);
+                  setLocationResults([]);
+                  setLocationError("");
+                }}
+              >
+                <strong>{place.name}</strong>
+                <span>{place.category}</span>
+                <span>{place.area}</span>
+                <span className="location-hours">
+                  Horário: {place.hours}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selectedLocation && (
+          <p className="selected-location-message">
+            UPA selecionada: <strong>{selectedLocation.name}</strong> —{" "}
+            {selectedLocation.hours}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          className="primary-submit"
+          disabled={limitReached}
+        >
+          {limitReached ? "Limite atingido" : "Agendar"}
+        </button>
+      </form>
+
+      {agenda.map((item) => (
+        <div className="agenda-item" key={item.id}>
+          <div className="agenda-head">
+            <strong>{item.type}</strong>
+            <span>{item.points} pts</span>
+          </div>
+
+          <p>
+            {item.date} às {item.time}
+          </p>
+
+          <p className="agenda-location">{item.location}</p>
+
+          <div className="agenda-actions">
+            <button
+              className="agenda-action secondary"
+              onClick={() => handleConfirmPresence(item.id)}
+              disabled={item.confirmed}
+            >
+              {item.confirmed ? "Confirmado" : "Confirmar presença"}
+            </button>
+
+            <button
+              className="agenda-action ghost danger"
+              onClick={() => handleDeleteAppointment(item.id)}
+            >
+              Excluir
+            </button>
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+
+  const renderRewards = () => (
+    <section className="panel rewards-panel">
+      <div className="rewards-header">
+        <h3>Recompensas</h3>
+        <div className="points-box">{points} pts</div>
+      </div>
+
+      <div className="progress-bar">
+        <div
+          className="progress-fill"
+          style={{ width: `${nextLevelProgress}%` }}
+        />
+      </div>
+
+      <small>{points}/500 para o próximo nível</small>
+
+      {!rewardsLoaded && isSupabaseEnabled && (
+        <p className="empty-state">Carregando pontos e recompensas...</p>
+      )}
+
+      {rewards.map((reward) => {
+        const isDisabled = reward.redeemed || points < reward.cost;
+
+        return (
+          <div className="reward-item" key={reward.id}>
+            <span>{reward.icon}</span>
+
+            <div className="reward-text">
+              <strong>{reward.title}</strong>
+              <small>{reward.cost} pts</small>
+            </div>
+
+            <button
+              className={isDisabled ? "locked" : ""}
+              onClick={() => handleRedeem(reward.id)}
+              disabled={isDisabled}
+            >
+              {reward.redeemed
+                ? "Resgatado"
+                : points < reward.cost
+                  ? `Faltam ${reward.cost - points} pts`
+                  : "Resgatar"}
+            </button>
+          </div>
+        );
+      })}
+    </section>
+  );
+
+  if (!isLoggedIn) {
+    return renderAuthScreen();
+  }
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <div>
+          <p className="eyebrow">Recife Vital</p>
+          <h1>Olá, {authForm.name || "usuário"}!</h1>
+        </div>
+
+        <button className="logout-btn" onClick={handleLogout}>
+          Sair
+        </button>
+      </header>
+
+      <nav className="tab-nav" aria-label="Navegação principal">
+        {tabs.map((tab) => (
+          <button
+            key={tab}
+            className={activeTab === tab ? "tab active" : "tab"}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab}
+          </button>
+        ))}
+      </nav>
+
+      <main className="content">
+        {activeTab === "Início" && renderHome()}
+        {activeTab === "Agenda" && renderAgenda()}
+        {activeTab === "Recompensas" && renderRewards()}
+      </main>
+
+      {confirmation && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setConfirmation(null)}
+        >
+          <div
+            className="confirmation-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h4>{confirmation.title}</h4>
+            <p>{confirmation.message}</p>
+
+            <div className="modal-actions">
+              <button
+                className="ghost"
+                onClick={() => setConfirmation(null)}
+              >
+                Cancelar
+              </button>
+
+              <button
+                className="primary-submit"
+                onClick={handleConfirmationAction}
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+==================== src/constants/theme.js ====================
+export const COLORS = {
+  primary: '#0066CC',      // Azul Primário
+  secondary: '#2E8B57',    // Verde Saúde
+  background: '#F5F5F5',   // Cinza Claro
+  surface: '#FFFFFF',      // Branco
+  textDark: '#4A4A4A',     // Cinza Escuro
+  alert: '#D9534F',        // Vermelho
+  points: '#F4B400',       // Amarelo Pontos
+  border: '#E0E0E0',
+};
+
+export const FONTS = {
+  title: { fontSize: 24, fontWeight: '600', color: COLORS.textDark },
+  subtitle: { fontSize: 18, fontWeight: '500', color: COLORS.textDark },
+  body: { fontSize: 16, fontWeight: '400', color: COLORS.textDark },
+  caption: { fontSize: 14, fontWeight: '400', color: COLORS.textDark },
+};
+
+
+==================== src/main.jsx ====================
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './styles.css';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+
+==================== src/screens/HomeScreen.js ====================
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { COLORS, FONTS } from '../constants/theme';
+
+export default function HomeScreen({ navigation }) {
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.header}>
+          <Text style={styles.greeting}>Olá, Maria!</Text>
+          <Text style={styles.subGreeting}>Bem-vinda ao Recife Vital</Text>
+        </View>
+
+        <View style={styles.mainCard}>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>PRÓXIMA CONSULTA</Text>
+          </View>
+          <Text style={styles.dateText}>📅 14/08/2026 - 08:30</Text>
+          <Text style={styles.locationText}>USF Boa Vista</Text>
+          <TouchableOpacity style={styles.primaryButton}>
+            <Text style={styles.primaryButtonText}>Ver detalhes</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.grid}>
+          <View style={[styles.gridCard, { borderLeftColor: COLORS.points }]}>
+            <Text style={styles.cardIcon}>🪙</Text>
+            <Text style={styles.cardValue}>250 pts</Text>
+            <Text style={styles.cardLabel}>Saldo Recife Saudável</Text>
+          </View>
+
+          <View style={[styles.gridCard, { borderLeftColor: COLORS.primary }]}>
+            <Text style={styles.cardIcon}>❤️</Text>
+            <Text style={styles.cardValue}>15</Text>
+            <Text style={styles.cardLabel}>Consultas realizadas</Text>
+          </View>
+
+          <View style={[styles.gridCard, { borderLeftColor: COLORS.secondary }]}>
+            <Text style={styles.cardIcon}>💊</Text>
+            <Text style={styles.cardValue}>Em dia</Text>
+            <Text style={styles.cardLabel}>Próxima retirada</Text>
+          </View>
+
+          <View style={[styles.gridCard, { borderLeftColor: COLORS.alert }]}>
+            <Text style={styles.cardIcon}>🧪</Text>
+            <Text style={styles.cardValue}>1 pendente</Text>
+            <Text style={styles.cardLabel}>Hemoglobina Glicada</Text>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.background },
+  scrollContent: { padding: 20 },
+  header: { marginBottom: 20 },
+  greeting: { ...FONTS.title, color: COLORS.primary },
+  subGreeting: { ...FONTS.body, color: COLORS.textDark },
+  mainCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  badge: {
+    backgroundColor: '#E6F0FA',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+  },
+  badgeText: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
+  dateText: { ...FONTS.subtitle, marginBottom: 4 },
+  locationText: { ...FONTS.body, color: '#666', marginBottom: 16 },
+  primaryButton: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    minHeight: 48,
+  },
+  primaryButtonText: { color: COLORS.surface, fontWeight: '600', fontSize: 16 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  gridCard: {
+    backgroundColor: COLORS.surface,
+    width: '48%',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderLeftWidth: 5,
+    elevation: 2,
+  },
+  cardIcon: { fontSize: 24, marginBottom: 8 },
+  cardValue: { ...FONTS.subtitle, fontWeight: '700' },
+  cardLabel: { ...FONTS.caption, color: '#666', marginTop: 2 },
+});
+
+
+==================== src/screens/RecompensasScreen.js ====================
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { COLORS, FONTS } from '../constants/theme';
+
+export default function RecompensasScreen() {
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.pointsContainer}>
+          <Text style={styles.pointsText}>250</Text>
+          <Text style={styles.pointsLabel}>Pontos Recife Saudável</Text>
+          
+          <View style={styles.progressBg}>
+            <View style={[styles.progressFill, { width: '50%' }]} />
+          </View>
+          <Text style={styles.progressLabel}>250 / 500 para o próximo nível</Text>
+        </View>
+
+        <Text style={styles.sectionTitle}>Recompensas Disponíveis</Text>
+
+        <View style={styles.rewardCard}>
+          <Text style={styles.rewardIcon}>🚌</Text>
+          <View style={styles.rewardInfo}>
+            <Text style={styles.rewardTitle}>Crédito no VEM</Text>
+            <Text style={styles.rewardCost}>200 pontos</Text>
+          </View>
+          <TouchableOpacity style={styles.claimButton}>
+            <Text style={styles.claimButtonText}>Resgatar</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.rewardCard}>
+          <Text style={styles.rewardIcon}>🎭</Text>
+          <View style={styles.rewardInfo}>
+            <Text style={styles.rewardTitle}>Ingresso Cinema/Teatro</Text>
+            <Text style={styles.rewardCost}>150 pontos</Text>
+          </View>
+          <TouchableOpacity style={styles.claimButton}>
+            <Text style={styles.claimButtonText}>Resgatar</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.rewardCard}>
+          <Text style={styles.rewardIcon}>📚</Text>
+          <View style={styles.rewardInfo}>
+            <Text style={styles.rewardTitle}>Vaga Curso COMPAZ</Text>
+            <Text style={styles.rewardCost}>300 pontos</Text>
+          </View>
+          <TouchableOpacity style={[styles.claimButton, styles.disabledButton]} disabled>
+            <Text style={styles.claimButtonText}>Faltam 50 pts</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.background },
+  content: { padding: 20 },
+  pointsContainer: {
+    backgroundColor: COLORS.surface,
+    padding: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginBottom: 24,
+    elevation: 2,
+  },
+  pointsText: { fontSize: 48, fontWeight: 'bold', color: COLORS.points },
+  pointsLabel: { ...FONTS.subtitle, marginBottom: 16 },
+  progressBg: { width: '100%', height: 12, backgroundColor: '#E0E0E0', borderRadius: 6, marginBottom: 8 },
+  progressFill: { height: '100%', backgroundColor: COLORS.secondary, borderRadius: 6 },
+  progressLabel: { ...FONTS.caption, color: '#666' },
+  sectionTitle: { ...FONTS.title, marginBottom: 16 },
+  rewardCard: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.surface,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  rewardIcon: { fontSize: 32, marginRight: 12 },
+  rewardInfo: { flex: 1 },
+  rewardTitle: { ...FONTS.subtitle, fontSize: 16 },
+  rewardCost: { ...FONTS.caption, color: COLORS.primary, fontWeight: '700' },
+  claimButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  disabledButton: { backgroundColor: '#CCC' },
+  claimButtonText: { color: COLORS.surface, fontWeight: '600' },
+});
+
+
+==================== src/screens/AgendaScreen.js ====================
+import React from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { COLORS, FONTS } from '../constants/theme';
+
+const APPOINTMENTS = [
+  {
+    id: '1',
+    type: 'Consulta',
+    date: '14/08/2026',
+    time: '08:30',
+    location: 'USF Boa Vista',
+    points: 50,
+  },
+  {
+    id: '2',
+    type: 'Retirada de medicamento',
+    date: '18/08/2026',
+    time: '10:00',
+    location: 'Farmácia da Família',
+    points: 30,
+  },
+];
+
+export default function AgendaScreen() {
+  const handleConfirm = (item) => {
+    Alert.alert(
+      "Presença Confirmada!",
+      `Você ganhou +${item.points} pontos Recife Saudável.`
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <Text style={styles.headerTitle}>Sua Agenda</Text>
+      
+      <FlatList
+        data={APPOINTMENTS}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ padding: 20 }}
+        renderItem={({ item }) => (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.typeText}>{item.type}</Text>
+              <Text style={styles.pointsBadge}>+{item.points} pts</Text>
+            </View>
+            <Text style={styles.dateText}>📅 {item.date} às {item.time}</Text>
+            <Text style={styles.locationText}>📍 {item.location}</Text>
+            
+            <TouchableOpacity 
+              style={styles.confirmButton}
+              onPress={() => handleConfirm(item)}
+            >
+              <Text style={styles.confirmButtonText}>Confirmar presença</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.background },
+  headerTitle: { ...FONTS.title, marginHorizontal: 20, marginTop: 20 },
+  card: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    padding: 18,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  typeText: { ...FONTS.subtitle, color: COLORS.primary },
+  pointsBadge: { color: COLORS.secondary, fontWeight: '700', fontSize: 16 },
+  dateText: { ...FONTS.body, marginBottom: 6 },
+  locationText: { ...FONTS.body, color: '#666', marginBottom: 16 },
+  confirmButton: {
+    backgroundColor: COLORS.secondary,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    minHeight: 48,
+  },
+  confirmButtonText: { color: COLORS.surface, fontWeight: '600', fontSize: 16 },
+});
+
+
+==================== src/lib/supabase.js ====================
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+export const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey);
+
+export const supabase = hasSupabaseConfig
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
+
+
+==================== src/styles.css ====================
+:root {
+  --primary: #0066cc;
+  --primary-light: #eaf4ff;
+  --secondary: #2e8b57;
+  --secondary-light: #eaf7ee;
+  --background: #f5f7fb;
+  --surface: #ffffff;
+  --text-dark: #27364a;
+  --text-muted: #657287;
+  --alert: #d9534f;
+  --points: #f4b400;
+  --border: #dfe7f1;
+  --shadow: 0 12px 28px rgba(17, 24, 39, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: linear-gradient(
+    180deg,
+    #edf5ff 0%,
+    var(--background) 32%,
+    #f8f9fb 100%
+  );
+  color: var(--text-dark);
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.app-shell {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  padding: 28px 20px 42px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.topbar h1 {
+  margin: 8px 0 0;
+  color: var(--primary);
+  font-size: clamp(1.8rem, 3vw, 2.3rem);
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--primary);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.logout-btn {
+  align-self: center;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #e96661, var(--alert));
+  color: #fff;
+  padding: 10px 18px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  box-shadow: 0 8px 18px rgba(217, 83, 79, 0.2);
+}
+
+.tab-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.tab {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--text-dark);
+  padding: 10px 18px;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(17, 24, 39, 0.04);
+}
+
+.tab.active {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--primary), #1989ff);
+  color: #fff;
+  box-shadow: 0 10px 18px rgba(0, 102, 204, 0.22);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.hero-card,
+.panel,
+.stat-card,
+.quick-card,
+.agenda-item,
+.reward-item,
+.pending-panel,
+.status-banner {
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.hero-card {
+  border: 1px solid rgba(0, 102, 204, 0.1);
+  padding: 22px;
+}
+
+.hero-header,
+.panel-header,
+.rewards-header,
+.agenda-head,
+.pending-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tag {
+  display: inline-block;
+  border-radius: 8px;
+  background: #e6f0fa;
+  color: var(--primary);
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.mini-button {
+  border: none;
+  border-radius: 10px;
+  background: var(--primary-light);
+  color: var(--primary);
+  padding: 8px 12px;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.hero-card h2 {
+  margin: 16px 0 8px;
+  font-size: clamp(1.5rem, 2.4vw, 2.25rem);
+}
+
+.hero-card p {
+  margin: 0 0 18px;
+}
+
+.home-location {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 10px;
+  background: var(--primary-light);
+  color: #1d4b80;
+  padding: 9px 12px;
+  font-size: 0.96rem;
+  font-weight: 800;
+}
+
+.details-box {
+  border: 1px solid #dfe7ff;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f6faff, #eef6ff);
+  padding: 14px;
+}
+
+.details-box p {
+  margin: 0 0 6px;
+  color: var(--text-dark);
+}
+
+.details-box p:last-child {
+  margin-bottom: 0;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 14px;
+}
+
+.quick-card {
+  border: 1px solid var(--border);
+  color: var(--text-dark);
+  padding: 18px 12px;
+  text-align: center;
+}
+
+.quick-card.active {
+  border-color: var(--primary);
+  background: linear-gradient(180deg, #edf5ff, #fff);
+}
+
+.quick-card span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 1.8rem;
+}
+
+.quick-card strong {
+  font-size: 0.98rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  border: 1px solid transparent;
+  border-left: 5px solid var(--primary);
+  color: var(--text-dark);
+  padding: 18px 16px;
+  text-align: left;
+}
+
+.stat-card span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 1.8rem;
+}
+
+.stat-card strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 1.3rem;
+}
+
+.stat-card small {
+  color: var(--text-muted);
+}
+
+.stat-card.points {
+  border-left-color: var(--points);
+}
+
+.stat-card.blue {
+  border-left-color: var(--primary);
+}
+
+.stat-card.green {
+  border-left-color: var(--secondary);
+}
+
+.stat-card.red {
+  border-left-color: var(--alert);
+}
+
+.panel {
+  padding: 20px;
+}
+
+.panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.panel h3 {
+  margin: 0;
+  font-size: 1.7rem;
+}
+
+.status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid rgba(46, 139, 87, 0.16);
+  background: linear-gradient(135deg, #eaf7ee, #f3faf7);
+  padding: 13px 16px;
+}
+
+.status-banner strong {
+  color: var(--secondary);
+  font-size: 1.1rem;
+}
+
+.pending-panel {
+  border: 1px solid var(--border);
+  padding: 18px;
+}
+
+.pending-head h4 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.pending-badge {
+  display: inline-flex;
+  min-width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #eaf3ff;
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.pending-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fafcff;
+  padding: 12px 14px;
+}
+
+.pending-item strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--primary);
+}
+
+.pending-item p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.pending-actions,
+.agenda-actions,
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.small-button,
+.secondary,
+.primary-submit,
+.reward-item button {
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-weight: 800;
+}
+
+.small-button {
+  padding: 10px 12px;
+  font-size: 0.85rem;
+}
+
+.small-button.success {
+  background: linear-gradient(135deg, var(--secondary), #4ba56b);
+}
+
+.small-button.danger {
+  background: linear-gradient(135deg, #ff7b72, #e14b45);
+}
+
+.schedule-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  border: 2px solid #e8f0ff;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #fbfcff, #f0f8ff);
+  padding: 24px;
+  box-shadow: 0 8px 20px rgba(0, 102, 204, 0.08);
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--primary);
+  font-size: 0.84rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+input,
+select {
+  width: 100%;
+  border: 2px solid #e0e8ff;
+  border-radius: 12px;
+  outline: none;
+  background: #fff;
+  color: var(--text-dark);
+  padding: 12px 14px;
+  font-size: 1rem;
+  text-transform: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+input:focus,
+select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+}
+
+.time-input {
+  letter-spacing: 0.05em;
+}
+
+.location-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.secondary {
+  min-height: 48px;
+  background: linear-gradient(135deg, var(--secondary), #48a46a);
+  padding: 12px 16px;
+  box-shadow: 0 8px 16px rgba(46, 139, 87, 0.18);
+}
+
+.location-search {
+  width: 100%;
+}
+
+.location-error {
+  margin: 0;
+  color: var(--alert);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.location-results {
+  display: flex;
+  max-height: 310px;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.location-result {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  border: 2px solid #e0e8ff;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fbfcff, #f5f9ff);
+  color: var(--text-dark);
+  padding: 14px 16px;
+  text-align: left;
+}
+
+.location-result:hover {
+  border-color: var(--primary);
+  background: linear-gradient(135deg, #f0f8ff, #e8f2ff);
+  box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
+}
+
+.location-result strong {
+  color: var(--primary);
+  font-size: 1rem;
+}
+
+.location-result span {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
+.location-result .location-hours {
+  margin-top: 3px;
+  color: var(--secondary);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.selected-location-message {
+  margin: 0;
+  border: 1px solid rgba(46, 139, 87, 0.2);
+  border-radius: 10px;
+  background: var(--secondary-light);
+  color: #236d43;
+  padding: 11px 13px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.primary-submit {
+  width: 100%;
+  min-height: 50px;
+  background: linear-gradient(135deg, var(--primary), #1989ff);
+  padding: 14px 20px;
+  font-size: 1rem;
+  box-shadow: 0 8px 18px rgba(0, 102, 204, 0.24);
+}
+
+.primary-submit:hover:not(:disabled) {
+  box-shadow: 0 10px 22px rgba(0, 102, 204, 0.32);
+}
+
+.agenda-item {
+  border: 1px solid var(--border);
+  padding: 16px;
+}
+
+.agenda-head {
+  margin-bottom: 10px;
+}
+
+.agenda-head strong {
+  color: var(--primary);
+  font-size: 1.1rem;
+}
+
+.agenda-head span {
+  color: var(--secondary);
+  font-weight: 800;
+}
+
+.agenda-item p {
+  margin: 0 0 8px;
+}
+
+.agenda-location {
+  display: inline-flex;
+  max-width: 100%;
+  border-radius: 10px;
+  background: var(--primary-light);
+  color: #1d4b80;
+  padding: 8px 12px;
+  font-size: 0.94rem;
+  font-weight: 800;
+}
+
+.agenda-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 12px;
+}
+
+.agenda-action {
+  display: inline-flex;
+  min-height: 48px;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.ghost {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f3f4f6;
+  color: var(--text-dark);
+  padding: 10px 14px;
+  font-weight: 800;
+}
+
+.ghost.danger {
+  border: none;
+  background: linear-gradient(135deg, #ff7b72, #e14b45);
+  color: #fff;
+  box-shadow: 0 8px 16px rgba(225, 75, 69, 0.18);
+}
+
+.rewards-header {
+  margin-bottom: 14px;
+}
+
+.points-box {
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--points), #ffca28);
+  color: #fff;
+  padding: 8px 13px;
+  font-weight: 800;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e0e0e0;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--secondary), #6ecf8b);
+  transition: width 0.3s ease;
+}
+
+.rewards-panel > small {
+  color: var(--text-muted);
+}
+
+.reward-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  padding: 16px;
+}
+
+.reward-item > span {
+  font-size: 2rem;
+}
+
+.reward-text {
+  flex: 1;
+}
+
+.reward-text strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.reward-text small {
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.reward-item button {
+  background: linear-gradient(135deg, var(--primary), #1f80eb);
+  padding: 11px 14px;
+  white-space: nowrap;
+  box-shadow: 0 8px 16px rgba(0, 102, 204, 0.18);
+}
+
+.reward-item button.locked {
+  background: #b5b5b5;
+  box-shadow: none;
+}
+
+.empty-state {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.55);
+  padding: 18px;
+}
+
+.confirmation-modal {
+  width: min(430px, 100%);
+  border: 1px solid rgba(0, 102, 204, 0.1);
+  border-radius: 18px;
+  background: #fff;
+  padding: 22px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.22);
+}
+
+.confirmation-modal h4 {
+  margin: 0 0 12px;
+  color: var(--primary);
+  font-size: 1.3rem;
+}
+
+.confirmation-modal p {
+  margin: 0 0 18px;
+  line-height: 1.5;
+}
+
+.confirmation-modal .modal-actions button {
+  min-height: 46px;
+  flex: 1;
+}
+
+.auth-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background: linear-gradient(180deg, #edf5ff, #f5f8ff 42%, #f6f6f6);
+  padding: 24px;
+}
+
+.auth-card {
+  width: min(430px, 100%);
+  border: 1px solid rgba(0, 102, 204, 0.1);
+  border-radius: 24px;
+  background: #fff;
+  padding: 28px 24px;
+  box-shadow: 0 16px 32px rgba(17, 24, 39, 0.1);
+}
+
+.auth-brand {
+  margin-bottom: 20px;
+}
+
+.auth-brand h2 {
+  margin: 8px 0 0;
+  color: var(--primary);
+  font-size: 2rem;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-form label {
+  color: var(--text-dark);
+  text-transform: none;
+}
+
+.auth-hint {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.auth-switch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.link-button {
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  padding: 0;
+  font-weight: 800;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 20px 14px 32px;
+  }
+
+  .topbar {
+    align-items: center;
+  }
+
+  .topbar h1 {
+    font-size: 1.7rem;
+  }
+
+  .logout-btn {
+    padding: 9px 13px;
+  }
+
+  .quick-actions,
+  .stats-grid,
+  .field-grid,
+  .agenda-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .pending-item,
+  .reward-item {
+    flex-wrap: wrap;
+  }
+
+  .pending-actions,
+  .reward-item button,
+  .agenda-actions,
+  .modal-actions {
+    width: 100%;
+  }
+
+  .pending-actions .small-button {
+    flex: 1;
+  }
+
+  .reward-item button {
+    width: 100%;
+  }
+
+  .schedule-form {
+    padding: 18px;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+}
+
+==================== package.json ====================
+{
+  "name": "recife-vital",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 3000",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "check-env": "node -e \"const e = process.env; console.log('✓ VITE_SUPABASE_URL:', e.VITE_SUPABASE_URL ? 'SET' : 'MISSING'); console.log('✓ VITE_SUPABASE_ANON_KEY:', e.VITE_SUPABASE_ANON_KEY ? 'SET' : 'MISSING');\"",
+    "validate": "bash setup-validate.sh"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.2",
+    "vite": "^5.4.10"
+  }
+}
+
+
+==================== App.js ====================
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Text } from 'react-native';
+
+import HomeScreen from './src/screens/HomeScreen';
+import AgendaScreen from './src/screens/AgendaScreen';
+import RecompensasScreen from './src/screens/RecompensasScreen';
+import { COLORS } from './src/constants/theme';
+
+const Tab = createBottomTabNavigator();
+
+export default function App() {
+  return (
+    <NavigationContainer>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarActiveTintColor: COLORS.primary,
+          tabBarInactiveTintColor: 'gray',
+          tabBarStyle: { height: 60, paddingBottom: 8, paddingTop: 8 },
+          tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
+          tabBarIcon: ({ focused }) => {
+            let icon = '🏠';
+            if (route.name === 'Agenda') icon = '📅';
+            if (route.name === 'Recompensas') icon = '🎁';
+            return <Text style={{ fontSize: 20 }}>{icon}</Text>;
+          },
+        })}
+      >
+        <Tab.Screen name="Início" component={HomeScreen} />
+        <Tab.Screen name="Agenda" component={AgendaScreen} />
+        <Tab.Screen name="Recompensas" component={RecompensasScreen} />
+      </Tab.Navigator>
+    </NavigationContainer>
+  );
+}
