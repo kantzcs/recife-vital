@@ -38,33 +38,96 @@ const RECIFE_HEALTH_LOCATIONS = [
     id: 1,
     name: "UPA Torrões",
     category: "Urgência e emergência",
-    area: "Rua Mirabela, 30, Torrões, Recife - PE",
+    area: "Av. Abdias de Carvalho, 30, Torrões, Recife - PE",
+    phone: "(81) 3184-4440",
     hours: "Aberto 24 horas, todos os dias",
   },
   {
     id: 2,
     name: "UPA Caxangá",
     category: "Urgência e emergência",
-    area: "Avenida Caxangá, Iputinga, Recife - PE",
+    area: "Av. Caxangá, s/n, Várzea, Recife - PE",
+    phone: "(81) 3184-4366",
     hours: "Aberto 24 horas, todos os dias",
   },
   {
     id: 3,
     name: "UPA Ibura",
     category: "Urgência e emergência",
-    area: "Ibura, Recife - PE",
+    area: "Rua Vale do Itajaí, s/n, Ibura, Recife - PE",
+    phone: "(81) 3184-4595",
     hours: "Aberto 24 horas, todos os dias",
+  },
+  {
+    id: 4,
+    name: "UPA Imbiribeira",
+    category: "Urgência e emergência",
+    area: "Av. Mascarenhas de Morais, 4223, Imbiribeira, Recife - PE",
+    phone: "(81) 3184-4328",
+    hours: "Aberto 24 horas, todos os dias",
+  },
+];
+
+const APPOINTMENT_TYPES = [
+  { value: "Aferição de pressão", points: 30 },
+  { value: "Controle glicêmico", points: 30 },
+  { value: "Consulta HIPERDIA", points: 50 },
+  { value: "Retirada de medicamento", points: 20 },
+  { value: "Exame (hemoglobina glicada)", points: 40 },
+];
+
+const HEALTH_TIPS = [
+  {
+    id: 1,
+    icon: "❤",
+    title: "Meça a pressão regularmente",
+    text: "Pessoas com hipertensão devem aferir a pressão em pelo menos duas ocasiões e anotar os valores para levar à consulta.",
+  },
+  {
+    id: 2,
+    icon: "🩸",
+    title: "Monitore a glicemia",
+    text: "Registre os valores de glicemia de jejum e pós-refeição; a meta usual é até 126 mg/dL em jejum.",
+  },
+  {
+    id: 3,
+    icon: "🍽",
+    title: "Monte um prato equilibrado",
+    text: "Metade do prato com vegetais, um quarto com proteína magra e um quarto com carboidratos integrais ajuda a controlar pressão e glicemia juntas.",
+  },
+  {
+    id: 4,
+    icon: "🚶",
+    title: "Movimente-se todos os dias",
+    text: "30 minutos de caminhada a maior parte dos dias da semana auxiliam no controle de ambas as condições.",
+  },
+  {
+    id: 5,
+    icon: "💊",
+    title: "Não interrompa a medicação",
+    text: "Tome os medicamentos nos horários indicados, mesmo se sentir bem, e nunca interrompa sem orientação médica.",
   },
 ];
 
 const tabs = ["Início", "Agenda", "Recompensas"];
 
-const normalizeLocationText = (value) =>
-  value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
+const OPENING_HOUR = 7;
+const CLOSING_HOUR = 22;
+const SLOT_STEP_MINUTES = 30;
+
+const generateTimeSlots = () => {
+  const slots = [];
+  for (let hour = OPENING_HOUR; hour < CLOSING_HOUR; hour += 1) {
+    for (let minute = 0; minute < 60; minute += SLOT_STEP_MINUTES) {
+      const hh = String(hour).padStart(2, "0");
+      const mm = String(minute).padStart(2, "0");
+      slots.push(`${hh}:${mm}`);
+    }
+  }
+  return slots;
+};
+
+const TIME_SLOTS = generateTimeSlots();
 
 const mapSupabaseAppointment = (appointment) => ({
   id: appointment.id,
@@ -75,6 +138,32 @@ const mapSupabaseAppointment = (appointment) => ({
   points: appointment.points ?? 0,
   confirmed: Boolean(appointment.confirmed),
 });
+
+const CoinIcon = ({ size = 22 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+    role="img"
+  >
+    <circle cx="12" cy="12" r="9.5" fill="#F4B400" stroke="#C98A06" strokeWidth="1.5" />
+    <circle cx="12" cy="12" r="6.8" fill="none" stroke="#C98A06" strokeWidth="1" strokeDasharray="1.4 1.6" />
+    <text
+      x="12"
+      y="15.5"
+      textAnchor="middle"
+      fontSize="9"
+      fontWeight="800"
+      fill="#7A5300"
+      fontFamily="Sora, sans-serif"
+    >
+      RV
+    </text>
+  </svg>
+);
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -97,19 +186,25 @@ export default function App() {
   const [agenda, setAgenda] = useState(initialAgenda);
   const [confirmation, setConfirmation] = useState(null);
 
-  const [locationResults, setLocationResults] = useState([]);
-  const [selectedLocation, setSelectedLocation] = useState(null);
-  const [locationError, setLocationError] = useState("");
+  const [selectedLocationId, setSelectedLocationId] = useState("");
   const [appointmentError, setAppointmentError] = useState("");
   const [authError, setAuthError] = useState("");
   const [profileId, setProfileId] = useState(null);
 
   const [form, setForm] = useState({
-    type: "Consulta",
+    type: APPOINTMENT_TYPES[0].value,
     date: "",
     time: "",
-    location: "",
+    locationId: "",
   });
+
+  const [vitals, setVitals] = useState({
+    systolic: "",
+    diastolic: "",
+    glucose: "",
+  });
+  const [vitalsHistory, setVitalsHistory] = useState([]);
+  const [vitalsError, setVitalsError] = useState("");
 
   const isSupabaseEnabled = hasSupabaseConfig && Boolean(supabase);
 
@@ -125,6 +220,76 @@ export default function App() {
     () => Math.min((points / 500) * 100, 100),
     [points]
   );
+
+  const selectedLocation = useMemo(
+    () =>
+      RECIFE_HEALTH_LOCATIONS.find(
+        (place) => String(place.id) === String(form.locationId)
+      ) ?? null,
+    [form.locationId]
+  );
+
+  const nextAppointmentLocation = useMemo(() => {
+    if (!agenda[0]) return null;
+    return (
+      RECIFE_HEALTH_LOCATIONS.find(
+        (place) => place.name === agenda[0].location
+      ) ?? null
+    );
+  }, [agenda]);
+
+  const daysUntilNextAppointment = useMemo(() => {
+    const next = agenda[0];
+    if (!next) return null;
+
+    const [day, month, year] = next.date.split("/");
+    const target = new Date(`${year}-${month}-${day}T${next.time}:00`);
+    const now = new Date();
+    const diffMs = target.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+    return diffDays;
+  }, [agenda]);
+
+  const totalPointsEarned = useMemo(
+    () =>
+      agenda
+        .filter((item) => item.confirmed)
+        .reduce((sum, item) => sum + item.points, 0),
+    [agenda]
+  );
+
+  const lastVitals = vitalsHistory[0] ?? null;
+
+  const pressureStatus = useMemo(() => {
+    if (!lastVitals) return null;
+    const { systolic, diastolic } = lastVitals;
+    if (systolic >= 140 || diastolic >= 90) return "alta";
+    if (systolic >= 130 || diastolic >= 85) return "atenção";
+    return "controlada";
+  }, [lastVitals]);
+
+  const glucoseStatus = useMemo(() => {
+    if (!lastVitals || !lastVitals.glucose) return null;
+    if (lastVitals.glucose >= 126) return "alta";
+    if (lastVitals.glucose >= 100) return "atenção";
+    return "controlada";
+  }, [lastVitals]);
+
+  const availableTimeSlots = useMemo(() => {
+    if (!form.date) return TIME_SLOTS;
+
+    const today = getMinDate();
+    if (form.date !== today) return TIME_SLOTS;
+
+    const now = new Date();
+    return TIME_SLOTS.filter((slot) => {
+      const [hh, mm] = slot.split(":").map(Number);
+      const slotDate = new Date();
+      slotDate.setHours(hh, mm, 0, 0);
+      return slotDate > now;
+    });
+  }, [form.date]);
 
   const openConfirmation = (type, payload = {}) => {
     setConfirmation({ type, ...payload });
@@ -142,17 +307,17 @@ export default function App() {
     });
   };
 
-  const getMinDate = () => {
+  function getMinDate() {
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, "0");
     const day = String(today.getDate()).padStart(2, "0");
 
     return `${year}-${month}-${day}`;
-  };
+  }
 
   const isDateTimeValid = (date, time) => {
-    if (!date || !time || time.length !== 5) return false;
+    if (!date || !time) return false;
 
     const appointmentDateTime = new Date(`${date}T${time}:00`);
     return appointmentDateTime > new Date();
@@ -462,8 +627,8 @@ export default function App() {
     setPoints(0);
     setRewards(initialRewards);
     setRewardsLoaded(false);
-    setLocationResults([]);
-    setSelectedLocation(null);
+    setSelectedLocationId("");
+    setVitalsHistory([]);
     setAuthForm({
       name: "",
       email: "",
@@ -495,66 +660,6 @@ export default function App() {
     setActiveTab("Início");
   };
 
-  const handleLocationSearch = () => {
-    const query = form.location.trim();
-
-    setLocationError("");
-    setSelectedLocation(null);
-
-    if (!query) {
-      setLocationResults(RECIFE_HEALTH_LOCATIONS);
-      return;
-    }
-
-    const normalizedQuery = normalizeLocationText(query);
-
-    const filtered = RECIFE_HEALTH_LOCATIONS.filter((place) => {
-      const searchText = `${place.name} ${place.category} ${place.area}`;
-      return normalizeLocationText(searchText).includes(normalizedQuery);
-    });
-
-    setLocationResults(filtered);
-
-    if (!filtered.length) {
-      setLocationError(
-        "Nenhuma UPA foi encontrada. Pesquise por Torrões, Caxangá ou Ibura."
-      );
-    }
-  };
-
-  const handleTimeChange = (event) => {
-    let value = event.target.value.replace(/\D/g, "");
-
-    if (value.length > 2) {
-      value = `${value.slice(0, 2)}:${value.slice(2, 4)}`;
-    }
-
-    setForm((current) => ({
-      ...current,
-      time: value.slice(0, 5),
-    }));
-  };
-
-  const handleTimeBlur = () => {
-    if (!form.time) return;
-
-    if (form.time.length !== 5) {
-      setAppointmentError("Hora inválida. Use o formato HH:MM.");
-      return;
-    }
-
-    const [hours, minutes] = form.time.split(":");
-    const hour = Number(hours);
-    const minute = Number(minutes);
-
-    if (hour > 23 || minute > 59) {
-      setAppointmentError("Hora inválida. Use valores entre 00:00 e 23:59.");
-      return;
-    }
-
-    setAppointmentError("");
-  };
-
   const handleScheduleSubmit = (event) => {
     event.preventDefault();
     setAppointmentError("");
@@ -583,12 +688,10 @@ export default function App() {
       return;
     }
 
-    const earnedPoints =
-      form.type === "Consulta"
-        ? 50
-        : form.type === "Retirada"
-          ? 30
-          : 40;
+    const selectedType = APPOINTMENT_TYPES.find(
+      (item) => item.value === form.type
+    );
+    const earnedPoints = selectedType ? selectedType.points : 30;
 
     openConfirmation("schedule", {
       title: "Confirmar agendamento",
@@ -651,6 +754,41 @@ export default function App() {
       setPoints(points);
       setRewards(rewards);
     }
+  };
+
+  const handleVitalsSubmit = (event) => {
+    event.preventDefault();
+    setVitalsError("");
+
+    const systolic = Number(vitals.systolic);
+    const diastolic = Number(vitals.diastolic);
+    const glucose = vitals.glucose ? Number(vitals.glucose) : null;
+
+    if (!systolic || !diastolic) {
+      setVitalsError("Informe ao menos a pressão sistólica e a diastólica.");
+      return;
+    }
+
+    if (systolic < 60 || systolic > 260 || diastolic < 40 || diastolic > 160) {
+      setVitalsError("Verifique os valores de pressão informados.");
+      return;
+    }
+
+    const entry = {
+      id: Date.now(),
+      systolic,
+      diastolic,
+      glucose,
+      recordedAt: new Date().toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+
+    setVitalsHistory((current) => [entry, ...current].slice(0, 10));
+    setVitals({ systolic: "", diastolic: "", glucose: "" });
   };
 
   const handleConfirmationAction = async () => {
@@ -780,14 +918,13 @@ export default function App() {
       setActiveTab("Agenda");
       setSelectedCard("agenda");
       setForm({
-        type: "Consulta",
+        type: APPOINTMENT_TYPES[0].value,
         date: "",
         time: "",
-        location: "",
+        locationId: "",
       });
-      setSelectedLocation(null);
-      setLocationResults([]);
-      setLocationError("");
+      setSelectedLocationId("");
+      setAppointmentError("");
       setConfirmation(null);
     }
   };
@@ -798,7 +935,7 @@ export default function App() {
     <div className="auth-shell">
       <div className="auth-card">
         <div className="auth-brand">
-          <p className="eyebrow">Recife Vital</p>
+          <p className="eyebrow">Recife Vital · HIPERDIA</p>
           <h2>{authMode === "login" ? "Entrar" : "Criar conta"}</h2>
         </div>
 
@@ -880,8 +1017,8 @@ export default function App() {
 
         <p className="auth-hint">
           {authMode === "login"
-            ? "Entre para acompanhar sua agenda, pontos e recompensas."
-            : "Crie sua conta para registrar atendimentos e acumular pontos."}
+            ? "Entre para acompanhar sua pressão, glicemia, agenda e recompensas."
+            : "Crie sua conta para registrar suas medidas e acumular pontos."}
         </p>
 
         <div className="auth-switch">
@@ -912,7 +1049,7 @@ export default function App() {
     <>
       <section className="hero-card">
         <div className="hero-header">
-          <span className="tag">PRÓXIMA CONSULTA</span>
+          <span className="tag">PRÓXIMO ATENDIMENTO</span>
 
           <button
             className="mini-button"
@@ -925,14 +1062,24 @@ export default function App() {
         <h2>
           {nextAppointment
             ? `${nextAppointment.date} - ${nextAppointment.time}`
-            : "Sem consulta agendada"}
+            : "Sem atendimento agendado"}
         </h2>
 
         <p className="home-location">
           {nextAppointment
             ? nextAppointment.location
-            : "Defina uma UPA para o seu próximo atendimento"}
+            : "Agende sua próxima aferição ou consulta HIPERDIA"}
         </p>
+
+        {nextAppointment && daysUntilNextAppointment !== null && (
+          <p className="home-countdown">
+            {daysUntilNextAppointment <= 0
+              ? "É hoje!"
+              : daysUntilNextAppointment === 1
+                ? "Falta 1 dia"
+                : `Faltam ${daysUntilNextAppointment} dias`}
+          </p>
+        )}
 
         {showDetails && (
           <div className="details-box">
@@ -947,6 +1094,115 @@ export default function App() {
                 ? `${nextAppointment.type} em ${nextAppointment.location}.`
                 : "Abra a agenda para realizar seu primeiro agendamento."}
             </p>
+
+            {nextAppointmentLocation && (
+              <p>
+                📞 Telefone: {nextAppointmentLocation.phone}
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Registrar minhas medidas</h3>
+        </div>
+
+        <form className="vitals-form" onSubmit={handleVitalsSubmit}>
+          <div className="field-grid">
+            <label>
+              Pressão sistólica
+              <input
+                type="number"
+                inputMode="numeric"
+                placeholder="Ex: 120"
+                value={vitals.systolic}
+                onChange={(event) =>
+                  setVitals((current) => ({
+                    ...current,
+                    systolic: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <label>
+              Pressão diastólica
+              <input
+                type="number"
+                inputMode="numeric"
+                placeholder="Ex: 80"
+                value={vitals.diastolic}
+                onChange={(event) =>
+                  setVitals((current) => ({
+                    ...current,
+                    diastolic: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <label>
+              Glicemia (mg/dL)
+              <input
+                type="number"
+                inputMode="numeric"
+                placeholder="Opcional"
+                value={vitals.glucose}
+                onChange={(event) =>
+                  setVitals((current) => ({
+                    ...current,
+                    glucose: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          </div>
+
+          {vitalsError && <p className="location-error">{vitalsError}</p>}
+
+          <button type="submit" className="secondary vitals-submit">
+            Salvar registro
+          </button>
+        </form>
+
+        {lastVitals && (
+          <div className="vitals-summary">
+            <div className={`vitals-badge ${pressureStatus}`}>
+              <span role="img" aria-label="Pressão">❤</span>
+              <div>
+                <strong>
+                  {lastVitals.systolic}/{lastVitals.diastolic} mmHg
+                </strong>
+                <small>Pressão {pressureStatus}</small>
+              </div>
+            </div>
+
+            {lastVitals.glucose && (
+              <div className={`vitals-badge ${glucoseStatus}`}>
+                <span role="img" aria-label="Glicemia">🩸</span>
+                <div>
+                  <strong>{lastVitals.glucose} mg/dL</strong>
+                  <small>Glicemia {glucoseStatus}</small>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {vitalsHistory.length > 0 && (
+          <div className="vitals-history">
+            <h4>Histórico recente</h4>
+            {vitalsHistory.map((entry) => (
+              <div className="vitals-history-item" key={entry.id}>
+                <span>{entry.recordedAt}</span>
+                <strong>
+                  {entry.systolic}/{entry.diastolic} mmHg
+                  {entry.glucose ? ` · ${entry.glucose} mg/dL` : ""}
+                </strong>
+              </div>
+            ))}
           </div>
         )}
       </section>
@@ -960,7 +1216,7 @@ export default function App() {
           }
           onClick={() => handleQuickAction("agenda")}
         >
-          <span>📅</span>
+          <span role="img" aria-label="Agendar">📅</span>
           <strong>Agendar</strong>
         </button>
 
@@ -972,7 +1228,7 @@ export default function App() {
           }
           onClick={() => handleQuickAction("rewards")}
         >
-          <span>🎁</span>
+          <span role="img" aria-label="Recompensas">🎁</span>
           <strong>Recompensas</strong>
         </button>
 
@@ -984,7 +1240,7 @@ export default function App() {
           }
           onClick={() => handleQuickAction("home")}
         >
-          <span>📊</span>
+          <span role="img" aria-label="Resumo">📊</span>
           <strong>Resumo</strong>
         </button>
       </section>
@@ -994,7 +1250,7 @@ export default function App() {
           className="stat-card points"
           onClick={() => handleQuickAction("rewards")}
         >
-          <span>🪙</span>
+          <span className="icon-badge"><CoinIcon /></span>
           <strong>{points} pts</strong>
           <small>Saldo Recife Saudável</small>
         </button>
@@ -1003,7 +1259,7 @@ export default function App() {
           className="stat-card blue"
           onClick={() => handleQuickAction("agenda")}
         >
-          <span>⏳</span>
+          <span role="img" aria-label="Pendências">⏳</span>
           <strong>{pendingItems.length}</strong>
           <small>Pendências em aberto</small>
         </button>
@@ -1012,19 +1268,19 @@ export default function App() {
           className="stat-card green"
           onClick={() => handleQuickAction("agenda")}
         >
-          <span>🩺</span>
+          <span role="img" aria-label="Atendimentos ativos">🩺</span>
           <strong>
             {Math.min(activeAppointments, MAX_APPOINTMENTS)}/
             {MAX_APPOINTMENTS}
           </strong>
-          <small>Consultas ativas</small>
+          <small>Atendimentos ativos</small>
         </button>
 
         <button
           className="stat-card red"
           onClick={() => handleQuickAction("agenda")}
         >
-          <span>✅</span>
+          <span role="img" aria-label="Status">✅</span>
           <strong>
             {pendingItems.length === 0
               ? "Tudo ok"
@@ -1034,6 +1290,42 @@ export default function App() {
           </strong>
           <small>Controle de atenções</small>
         </button>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Seu progresso</h3>
+        </div>
+
+        <div className="progress-summary">
+          <div>
+            <strong>{totalPointsEarned}</strong>
+            <small>pontos ganhos com presenças confirmadas</small>
+          </div>
+
+          <div>
+            <strong>{agenda.filter((item) => item.confirmed).length}</strong>
+            <small>atendimentos concluídos</small>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Dicas para hipertensão e diabetes</h3>
+        </div>
+
+        <div className="tips-list">
+          {HEALTH_TIPS.map((tip) => (
+            <div className="tip-item" key={tip.id}>
+              <span role="img" aria-label={tip.title}>{tip.icon}</span>
+              <div>
+                <strong>{tip.title}</strong>
+                <p>{tip.text}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
     </>
   );
@@ -1099,7 +1391,7 @@ export default function App() {
       <form className="schedule-form" onSubmit={handleScheduleSubmit}>
         <div className="field-grid">
           <label>
-            Tipo
+            Tipo de atendimento
             <select
               value={form.type}
               onChange={(event) =>
@@ -1109,9 +1401,11 @@ export default function App() {
                 }))
               }
             >
-              <option value="Consulta">Consulta</option>
-              <option value="Retirada">Retirada</option>
-              <option value="Exame">Exame</option>
+              {APPOINTMENT_TYPES.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.value}
+                </option>
+              ))}
             </select>
           </label>
 
@@ -1125,6 +1419,7 @@ export default function App() {
                 setForm((current) => ({
                   ...current,
                   date: event.target.value,
+                  time: "",
                 }))
               }
             />
@@ -1132,86 +1427,64 @@ export default function App() {
 
           <label>
             Horário
-            <input
-              type="text"
+            <select
               value={form.time}
-              onChange={handleTimeChange}
-              onBlur={handleTimeBlur}
-              placeholder="HH:MM"
-              maxLength={5}
-              className="time-input"
-            />
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  time: event.target.value,
+                }))
+              }
+              disabled={!form.date}
+            >
+              <option value="">
+                {form.date ? "Selecione um horário" : "Escolha a data primeiro"}
+              </option>
+              {availableTimeSlots.map((slot) => (
+                <option key={slot} value={slot}>
+                  {slot}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label>
-            Local
-            <input
-              type="text"
-              value={form.location}
+            UPA
+            <select
+              value={form.locationId}
               onChange={(event) => {
                 setForm((current) => ({
                   ...current,
-                  location: event.target.value,
+                  locationId: event.target.value,
                 }));
-                setSelectedLocation(null);
-                setLocationResults([]);
-                setLocationError("");
+                setSelectedLocationId(event.target.value);
+                setAppointmentError("");
               }}
-              placeholder="Pesquise e selecione uma UPA"
-            />
+            >
+              <option value="">Selecione uma UPA</option>
+              {RECIFE_HEALTH_LOCATIONS.map((place) => (
+                <option key={place.id} value={place.id}>
+                  {place.name}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
 
-        <div className="location-controls">
-          <button
-            type="button"
-            className="secondary location-search"
-            onClick={handleLocationSearch}
-          >
-            Buscar UPA
-          </button>
-        </div>
-
-        {locationError && (
-          <p className="location-error">{locationError}</p>
+        {form.date && availableTimeSlots.length === 0 && (
+          <p className="location-error">
+            Não há mais horários disponíveis hoje. Escolha outra data.
+          </p>
         )}
 
         {appointmentError && (
           <p className="location-error">{appointmentError}</p>
         )}
 
-        {locationResults.length > 0 && (
-          <div className="location-results">
-            {locationResults.map((place) => (
-              <button
-                type="button"
-                key={place.id}
-                className="location-result"
-                onClick={() => {
-                  setForm((current) => ({
-                    ...current,
-                    location: place.name,
-                  }));
-                  setSelectedLocation(place);
-                  setLocationResults([]);
-                  setLocationError("");
-                }}
-              >
-                <strong>{place.name}</strong>
-                <span>{place.category}</span>
-                <span>{place.area}</span>
-                <span className="location-hours">
-                  Horário: {place.hours}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-
         {selectedLocation && (
           <p className="selected-location-message">
             UPA selecionada: <strong>{selectedLocation.name}</strong> —{" "}
-            {selectedLocation.hours}
+            {selectedLocation.area} · 📞 {selectedLocation.phone}
           </p>
         )}
 
@@ -1223,6 +1496,24 @@ export default function App() {
           {limitReached ? "Limite atingido" : "Agendar"}
         </button>
       </form>
+
+      <div className="panel">
+        <div className="panel-header">
+          <h4>Unidades disponíveis</h4>
+        </div>
+
+        <div className="location-results">
+          {RECIFE_HEALTH_LOCATIONS.map((place) => (
+            <div className="location-result" key={place.id}>
+              <strong>{place.name}</strong>
+              <span>{place.area}</span>
+              <span className="location-hours">
+                {place.hours} · 📞 {place.phone}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {agenda.map((item) => (
         <div className="agenda-item" key={item.id}>
@@ -1283,7 +1574,7 @@ export default function App() {
 
         return (
           <div className="reward-item" key={reward.id}>
-            <span>{reward.icon}</span>
+            <span role="img" aria-label={reward.title}>{reward.icon}</span>
 
             <div className="reward-text">
               <strong>{reward.title}</strong>
@@ -1315,7 +1606,7 @@ export default function App() {
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Recife Vital</p>
+          <p className="eyebrow">Recife Vital · HIPERDIA</p>
           <h1>Olá, {authForm.name || "usuário"}!</h1>
         </div>
 
@@ -1407,7 +1698,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
   </React.StrictMode>
 );
-
 
 ==================== src/screens/HomeScreen.js ====================
 import React from 'react';
@@ -1722,19 +2012,75 @@ export const supabase = hasSupabaseConfig
 
 
 ==================== src/styles.css ====================
+
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap");
+
 :root {
-  --primary: #0066cc;
-  --primary-light: #eaf4ff;
-  --secondary: #2e8b57;
-  --secondary-light: #eaf7ee;
-  --background: #f5f7fb;
+  --primary-900: #063b74;
+  --primary-700: #0b5fb0;
+  --primary-600: #0f6fd1;
+  --primary-500: #1e88ff;
+  --primary-400: #56a9ff;
+  --primary-100: #e8f2ff;
+  --primary-50: #f4f9ff;
+
+  --secondary-700: #1f6b45;
+  --secondary-600: #2b8f5e;
+  --secondary-500: #35a874;
+  --secondary-100: #e6f7ee;
+
+  --amber-600: #c98a06;
+  --amber-500: #f0b429;
+  --amber-100: #fff4dc;
+
+  --danger-600: #c53a35;
+  --danger-500: #e5534b;
+  --danger-100: #ffe9e7;
+
+  --ink-900: #101828;
+  --ink-700: #344054;
+  --ink-500: #667085;
+  --ink-300: #98a2b3;
+  --ink-100: #eaecf0;
+
   --surface: #ffffff;
-  --text-dark: #27364a;
-  --text-muted: #657287;
-  --alert: #d9534f;
-  --points: #f4b400;
-  --border: #dfe7f1;
-  --shadow: 0 12px 28px rgba(17, 24, 39, 0.08);
+  --surface-2: #fbfcfe;
+  --border-soft: rgba(16, 24, 40, 0.07);
+  --border-strong: rgba(16, 24, 40, 0.12);
+
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-sm: 0 2px 8px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 8px 24px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0 20px 48px rgba(16, 24, 40, 0.12);
+  --shadow-glow-primary: 0 12px 32px rgba(30, 136, 255, 0.24);
+  --shadow-glow-secondary: 0 12px 28px rgba(53, 168, 116, 0.22);
+  --shadow-glow-amber: 0 10px 24px rgba(240, 180, 41, 0.28);
+  --shadow-glow-danger: 0 10px 24px rgba(229, 83, 75, 0.22);
+
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-base: 1rem;
+  --fs-md: 1.125rem;
+  --fs-lg: 1.4rem;
+  --fs-xl: 1.75rem;
+  --fs-2xl: 2.2rem;
+
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 * {
@@ -1750,108 +2096,187 @@ body,
 
 body {
   min-height: 100vh;
-  background: linear-gradient(
-    180deg,
-    #edf5ff 0%,
-    var(--background) 32%,
-    #f8f9fb 100%
-  );
-  color: var(--text-dark);
-  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #eaf3ff 0%, transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, #eafcf1 0%, transparent 55%),
+    linear-gradient(180deg, #f7fafd 0%, #f3f5f9 100%);
+  color: var(--ink-900);
+  font-family: "Plus Jakarta Sans", "Segoe UI", -apple-system, BlinkMacSystemFont,
+    "Helvetica Neue", Arial, sans-serif;
+  font-size: var(--fs-base);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4 {
+  font-family: "Sora", "Plus Jakarta Sans", sans-serif;
+  letter-spacing: -0.01em;
+  color: var(--ink-900);
 }
 
 button,
 input,
 select {
   font: inherit;
+  color: inherit;
 }
 
 button {
   cursor: pointer;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease,
-    opacity 0.2s ease;
+  border: none;
+  background: none;
+  transition: transform 0.18s var(--ease-out), box-shadow 0.25s var(--ease-out),
+    opacity 0.2s ease, background 0.25s ease, border-color 0.2s ease;
 }
 
 button:hover:not(:disabled) {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.68;
+  opacity: 0.55;
+  transform: none !important;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--primary-100);
+  color: var(--primary-900);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ink-300);
+  border-radius: var(--r-pill);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .app-shell {
   width: min(1100px, 100%);
   margin: 0 auto;
-  padding: 28px 20px 42px;
+  padding: var(--space-6) var(--space-5) var(--space-7);
+  animation: fadeIn 0.5s var(--ease-out);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .topbar {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 18px;
-  margin-bottom: 20px;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
 }
 
 .topbar h1 {
-  margin: 8px 0 0;
-  color: var(--primary);
-  font-size: clamp(1.8rem, 3vw, 2.3rem);
+  margin: var(--space-1) 0 0;
+  background: linear-gradient(120deg, var(--primary-700), var(--primary-500) 60%, var(--secondary-600));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: clamp(1.8rem, 3vw, var(--fs-2xl));
+  font-weight: 800;
 }
 
 .eyebrow {
   margin: 0;
-  color: var(--primary);
-  font-size: 0.76rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--primary-600);
+  font-size: var(--fs-xs);
   font-weight: 800;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.eyebrow::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--secondary-500);
+  box-shadow: 0 0 0 3px var(--secondary-100);
 }
 
 .logout-btn {
   align-self: center;
-  border: none;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #e96661, var(--alert));
-  color: #fff;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  color: var(--danger-600);
   padding: 10px 18px;
-  font-size: 0.9rem;
-  font-weight: 800;
-  box-shadow: 0 8px 18px rgba(217, 83, 79, 0.2);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  box-shadow: var(--shadow-xs);
+}
+
+.logout-btn:hover:not(:disabled) {
+  background: var(--danger-100);
+  border-color: rgba(229, 83, 75, 0.25);
+  box-shadow: var(--shadow-glow-danger);
 }
 
 .tab-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 22px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  padding: 6px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-xs);
+  width: fit-content;
 }
 
 .tab {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.8);
-  color: var(--text-dark);
-  padding: 10px 18px;
-  font-weight: 800;
-  box-shadow: 0 4px 12px rgba(17, 24, 39, 0.04);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-500);
+  padding: 10px 20px;
+  font-weight: 700;
+  font-size: var(--fs-sm);
 }
 
 .tab.active {
-  border-color: transparent;
-  background: linear-gradient(135deg, var(--primary), #1989ff);
+  background: linear-gradient(135deg, var(--primary-600), var(--primary-500));
   color: #fff;
-  box-shadow: 0 10px 18px rgba(0, 102, 204, 0.22);
+  box-shadow: var(--shadow-glow-primary);
+}
+
+.tab:hover:not(.active) {
+  background: var(--primary-50);
+  color: var(--primary-700);
+  transform: none;
 }
 
 .content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-5);
 }
 
 .hero-card,
@@ -1862,14 +2287,31 @@ button:disabled {
 .reward-item,
 .pending-panel,
 .status-banner {
-  border-radius: 18px;
+  border-radius: var(--r-lg);
   background: var(--surface);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-md);
+  transition: box-shadow 0.3s var(--ease-out), transform 0.3s var(--ease-out),
+    border-color 0.3s ease;
 }
 
 .hero-card {
-  border: 1px solid rgba(0, 102, 204, 0.1);
-  padding: 22px;
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-6);
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.92), rgba(255,255,255,0.98)),
+    radial-gradient(480px 240px at 100% 0%, var(--primary-100), transparent 70%);
+  border: 1px solid rgba(30, 136, 255, 0.14);
+  box-shadow: var(--shadow-lg);
+}
+
+.hero-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.5) 45%, transparent 60%);
+  pointer-events: none;
 }
 
 .hero-header,
@@ -1880,59 +2322,90 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
+  position: relative;
+  z-index: 1;
 }
 
 .tag {
-  display: inline-block;
-  border-radius: 8px;
-  background: #e6f0fa;
-  color: var(--primary);
-  padding: 6px 10px;
-  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--r-sm);
+  background: var(--primary-100);
+  color: var(--primary-700);
+  padding: 6px 12px;
+  font-size: var(--fs-xs);
   font-weight: 800;
+  letter-spacing: 0.06em;
 }
 
 .mini-button {
-  border: none;
-  border-radius: 10px;
-  background: var(--primary-light);
-  color: var(--primary);
-  padding: 8px 12px;
-  font-size: 0.84rem;
-  font-weight: 800;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  color: var(--primary-700);
+  padding: 8px 16px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  box-shadow: var(--shadow-xs);
+}
+
+.mini-button:hover:not(:disabled) {
+  border-color: var(--primary-400);
+  background: var(--primary-50);
 }
 
 .hero-card h2 {
-  margin: 16px 0 8px;
-  font-size: clamp(1.5rem, 2.4vw, 2.25rem);
-}
-
-.hero-card p {
-  margin: 0 0 18px;
-}
-
-.home-location {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 10px;
-  background: var(--primary-light);
-  color: #1d4b80;
-  padding: 9px 12px;
-  font-size: 0.96rem;
+  position: relative;
+  z-index: 1;
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: clamp(1.5rem, 2.4vw, var(--fs-xl));
   font-weight: 800;
 }
 
+.hero-card p {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 var(--space-4);
+}
+
+.home-location {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--r-md);
+  background: var(--primary-50);
+  border: 1px solid var(--primary-100);
+  color: var(--primary-900);
+  padding: 10px 14px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+
 .details-box {
-  border: 1px solid #dfe7ff;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #f6faff, #eef6ff);
-  padding: 14px;
+  position: relative;
+  z-index: 1;
+  margin-top: var(--space-4);
+  border: 1px solid rgba(30, 136, 255, 0.14);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  padding: var(--space-4);
+  animation: slideDown 0.3s var(--ease-out);
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .details-box p {
-  margin: 0 0 6px;
-  color: var(--text-dark);
+  margin: 0 0 var(--space-2);
+  color: var(--ink-700);
+  font-size: var(--fs-sm);
 }
 
 .details-box p:last-child {
@@ -1942,150 +2415,191 @@ button:disabled {
 .quick-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(120px, 1fr));
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .quick-card {
-  border: 1px solid var(--border);
-  color: var(--text-dark);
-  padding: 18px 12px;
+  padding: var(--space-5) var(--space-3);
   text-align: center;
+  color: var(--ink-700);
 }
 
 .quick-card.active {
-  border-color: var(--primary);
-  background: linear-gradient(180deg, #edf5ff, #fff);
+  border-color: var(--primary-400);
+  background: linear-gradient(180deg, var(--primary-50), var(--surface));
+  box-shadow: var(--shadow-glow-primary);
 }
 
 .quick-card span {
   display: block;
-  margin-bottom: 8px;
-  font-size: 1.8rem;
+  margin-bottom: var(--space-2);
+  font-size: 1.9rem;
+  filter: drop-shadow(0 2px 6px rgba(16, 24, 40, 0.12));
 }
 
 .quick-card strong {
-  font-size: 0.98rem;
+  font-size: var(--fs-sm);
+  font-weight: 700;
 }
 
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(180px, 1fr));
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .stat-card {
-  border: 1px solid transparent;
-  border-left: 5px solid var(--primary);
-  color: var(--text-dark);
-  padding: 18px 16px;
+  position: relative;
+  padding: var(--space-4) var(--space-4) var(--space-4) 20px;
   text-align: left;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 4px 0 0 4px;
+  background: var(--primary-500);
 }
 
 .stat-card span {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 1.8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--space-2);
+  border-radius: var(--r-md);
+  background: var(--primary-50);
+  font-size: 1.4rem;
 }
 
 .stat-card strong {
   display: block;
-  margin-bottom: 4px;
-  font-size: 1.3rem;
+  margin-bottom: 2px;
+  font-size: var(--fs-md);
+  font-weight: 800;
+  color: var(--ink-900);
 }
 
 .stat-card small {
-  color: var(--text-muted);
+  color: var(--ink-500);
+  font-size: var(--fs-xs);
+  font-weight: 600;
 }
 
-.stat-card.points {
-  border-left-color: var(--points);
-}
+.stat-card.points::before { background: var(--amber-500); }
+.stat-card.points span { background: var(--amber-100); }
 
-.stat-card.blue {
-  border-left-color: var(--primary);
-}
+.stat-card.blue::before { background: var(--primary-500); }
+.stat-card.blue span { background: var(--primary-50); }
 
-.stat-card.green {
-  border-left-color: var(--secondary);
-}
+.stat-card.green::before { background: var(--secondary-500); }
+.stat-card.green span { background: var(--secondary-100); }
 
-.stat-card.red {
-  border-left-color: var(--alert);
+.stat-card.red::before { background: var(--danger-500); }
+.stat-card.red span { background: var(--danger-100); }
+
+.stat-card:hover:not(:disabled) {
+  box-shadow: var(--shadow-lg);
 }
 
 .panel {
-  padding: 20px;
+  padding: var(--space-5);
 }
 
 .panel-stack {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--space-4);
 }
 
 .panel h3 {
   margin: 0;
-  font-size: 1.7rem;
+  font-size: var(--fs-lg);
+  font-weight: 800;
 }
 
 .status-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border: 1px solid rgba(46, 139, 87, 0.16);
-  background: linear-gradient(135deg, #eaf7ee, #f3faf7);
-  padding: 13px 16px;
+  border: 1px solid rgba(53, 168, 116, 0.18);
+  background: linear-gradient(120deg, var(--secondary-100), #f4fbf7);
+  padding: 14px 18px;
+}
+
+.status-banner span {
+  font-size: var(--fs-sm);
+  color: var(--secondary-700);
+  font-weight: 600;
 }
 
 .status-banner strong {
-  color: var(--secondary);
-  font-size: 1.1rem;
+  color: var(--secondary-700);
+  font-size: var(--fs-md);
+  font-weight: 800;
 }
 
 .pending-panel {
-  border: 1px solid var(--border);
-  padding: 18px;
+  border: 1px solid var(--border-soft);
+  padding: var(--space-5);
 }
 
 .pending-head h4 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: var(--fs-md);
+  font-weight: 800;
 }
 
 .pending-badge {
   display: inline-flex;
-  min-width: 28px;
-  height: 28px;
+  min-width: 26px;
+  height: 26px;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: #eaf3ff;
-  color: var(--primary);
+  background: var(--primary-100);
+  color: var(--primary-700);
   font-weight: 800;
+  font-size: var(--fs-xs);
 }
 
 .pending-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: #fafcff;
-  padding: 12px 14px;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  padding: 14px 16px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.pending-item:hover {
+  border-color: var(--primary-400);
+  background: var(--primary-50);
 }
 
 .pending-item strong {
   display: block;
   margin-bottom: 4px;
-  color: var(--primary);
+  color: var(--primary-700);
+  font-size: var(--fs-sm);
+  font-weight: 800;
 }
 
 .pending-item p {
   margin: 0;
-  color: var(--text-muted);
-  font-size: 0.92rem;
+  color: var(--ink-500);
+  font-size: var(--fs-xs);
+  font-weight: 600;
 }
 
 .pending-actions,
@@ -2094,55 +2608,58 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .small-button,
 .secondary,
 .primary-submit,
 .reward-item button {
-  border: none;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   color: #fff;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .small-button {
-  padding: 10px 12px;
-  font-size: 0.85rem;
+  padding: 10px 14px;
+  font-size: var(--fs-xs);
 }
 
 .small-button.success {
-  background: linear-gradient(135deg, var(--secondary), #4ba56b);
+  background: linear-gradient(135deg, var(--secondary-600), var(--secondary-500));
+  box-shadow: var(--shadow-glow-secondary);
 }
 
 .small-button.danger {
-  background: linear-gradient(135deg, #ff7b72, #e14b45);
+  background: linear-gradient(135deg, var(--danger-500), var(--danger-600));
+  box-shadow: var(--shadow-glow-danger);
 }
 
 .schedule-form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  border: 2px solid #e8f0ff;
-  border-radius: 20px;
-  background: linear-gradient(135deg, #fbfcff, #f0f8ff);
-  padding: 24px;
-  box-shadow: 0 8px 20px rgba(0, 102, 204, 0.08);
+  gap: var(--space-5);
+  border: 1px solid rgba(30, 136, 255, 0.14);
+  border-radius: var(--r-xl);
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.95), rgba(255,255,255,0.98)),
+    radial-gradient(400px 200px at 0% 0%, var(--primary-50), transparent 70%);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-md);
 }
 
 .field-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 label {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  color: var(--primary);
-  font-size: 0.84rem;
+  gap: var(--space-2);
+  color: var(--ink-700);
+  font-size: var(--fs-xs);
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -2151,40 +2668,44 @@ label {
 input,
 select {
   width: 100%;
-  border: 2px solid #e0e8ff;
-  border-radius: 12px;
+  border: 1.5px solid var(--ink-100);
+  border-radius: var(--r-md);
   outline: none;
-  background: #fff;
-  color: var(--text-dark);
+  background: var(--surface);
+  color: var(--ink-900);
   padding: 12px 14px;
-  font-size: 1rem;
+  font-size: var(--fs-base);
   text-transform: none;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+input:hover,
+select:hover {
+  border-color: var(--primary-400);
 }
 
 input:focus,
 select:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 4px rgba(30, 136, 255, 0.12);
 }
 
 .time-input {
   letter-spacing: 0.05em;
+  font-variant-numeric: tabular-nums;
 }
 
 .location-controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .secondary {
   min-height: 48px;
-  background: linear-gradient(135deg, var(--secondary), #48a46a);
-  padding: 12px 16px;
-  box-shadow: 0 8px 16px rgba(46, 139, 87, 0.18);
+  background: linear-gradient(135deg, var(--secondary-600), var(--secondary-500));
+  padding: 12px 18px;
+  box-shadow: var(--shadow-glow-secondary);
 }
 
 .location-search {
@@ -2193,17 +2714,25 @@ select:focus {
 
 .location-error {
   margin: 0;
-  color: var(--alert);
-  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--danger-600);
+  font-size: var(--fs-sm);
   font-weight: 600;
+}
+
+.location-error::before {
+  content: "\26A0";
 }
 
 .location-results {
   display: flex;
-  max-height: 310px;
+  max-height: 320px;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
   overflow-y: auto;
+  padding-right: 4px;
 }
 
 .location-result {
@@ -2211,174 +2740,217 @@ select:focus {
   width: 100%;
   flex-direction: column;
   align-items: flex-start;
-  gap: 5px;
-  border: 2px solid #e0e8ff;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #fbfcff, #f5f9ff);
-  color: var(--text-dark);
+  gap: 4px;
+  border: 1.5px solid var(--ink-100);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink-900);
   padding: 14px 16px;
   text-align: left;
 }
 
 .location-result:hover {
-  border-color: var(--primary);
-  background: linear-gradient(135deg, #f0f8ff, #e8f2ff);
-  box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
+  border-color: var(--primary-500);
+  background: var(--primary-50);
+  box-shadow: var(--shadow-sm);
 }
 
 .location-result strong {
-  color: var(--primary);
-  font-size: 1rem;
+  color: var(--primary-700);
+  font-size: var(--fs-base);
+  font-weight: 800;
 }
 
 .location-result span {
-  color: var(--text-muted);
-  font-size: 0.86rem;
+  color: var(--ink-500);
+  font-size: var(--fs-xs);
 }
 
 .location-result .location-hours {
-  margin-top: 3px;
-  color: var(--secondary);
-  font-size: 0.86rem;
+  margin-top: 2px;
+  color: var(--secondary-600);
+  font-size: var(--fs-xs);
   font-weight: 800;
 }
 
 .selected-location-message {
   margin: 0;
-  border: 1px solid rgba(46, 139, 87, 0.2);
-  border-radius: 10px;
-  background: var(--secondary-light);
-  color: #236d43;
-  padding: 11px 13px;
-  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(53, 168, 116, 0.2);
+  border-radius: var(--r-md);
+  background: var(--secondary-100);
+  color: var(--secondary-700);
+  padding: 12px 14px;
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 
 .primary-submit {
   width: 100%;
-  min-height: 50px;
-  background: linear-gradient(135deg, var(--primary), #1989ff);
+  min-height: 52px;
+  background: linear-gradient(135deg, var(--primary-600), var(--primary-500));
   padding: 14px 20px;
-  font-size: 1rem;
-  box-shadow: 0 8px 18px rgba(0, 102, 204, 0.24);
+  font-size: var(--fs-base);
+  box-shadow: var(--shadow-glow-primary);
+  letter-spacing: 0.01em;
 }
 
 .primary-submit:hover:not(:disabled) {
-  box-shadow: 0 10px 22px rgba(0, 102, 204, 0.32);
+  box-shadow: 0 16px 36px rgba(30, 136, 255, 0.32);
 }
 
 .agenda-item {
-  border: 1px solid var(--border);
-  padding: 16px;
+  border: 1px solid var(--border-soft);
+  padding: var(--space-4);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.agenda-item:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
 }
 
 .agenda-head {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2);
 }
 
 .agenda-head strong {
-  color: var(--primary);
-  font-size: 1.1rem;
-}
-
-.agenda-head span {
-  color: var(--secondary);
+  color: var(--primary-700);
+  font-size: var(--fs-md);
   font-weight: 800;
 }
 
+.agenda-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--r-pill);
+  background: var(--amber-100);
+  color: var(--amber-600);
+  padding: 4px 10px;
+  font-weight: 800;
+  font-size: var(--fs-xs);
+}
+
 .agenda-item p {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
+  color: var(--ink-700);
+  font-size: var(--fs-sm);
 }
 
 .agenda-location {
   display: inline-flex;
   max-width: 100%;
-  border-radius: 10px;
-  background: var(--primary-light);
-  color: #1d4b80;
+  border-radius: var(--r-sm);
+  background: var(--primary-50);
+  color: var(--primary-900);
   padding: 8px 12px;
-  font-size: 0.94rem;
-  font-weight: 800;
+  font-size: var(--fs-sm);
+  font-weight: 700;
 }
 
 .agenda-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 
 .agenda-action {
   display: inline-flex;
-  min-height: 48px;
+  min-height: 46px;
   width: 100%;
   align-items: center;
   justify-content: center;
-  border: none;
-  border-radius: 12px;
+  border-radius: var(--r-md);
   padding: 12px 14px;
-  font-size: 0.92rem;
+  font-size: var(--fs-sm);
   font-weight: 800;
 }
 
 .ghost {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: #f3f4f6;
-  color: var(--text-dark);
+  border: 1.5px solid var(--ink-100);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink-700);
   padding: 10px 14px;
-  font-weight: 800;
+  font-weight: 700;
+}
+
+.ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--ink-300);
 }
 
 .ghost.danger {
   border: none;
-  background: linear-gradient(135deg, #ff7b72, #e14b45);
+  background: linear-gradient(135deg, var(--danger-500), var(--danger-600));
   color: #fff;
-  box-shadow: 0 8px 16px rgba(225, 75, 69, 0.18);
+  box-shadow: var(--shadow-glow-danger);
 }
 
 .rewards-header {
-  margin-bottom: 14px;
+  margin-bottom: var(--space-4);
 }
 
 .points-box {
-  border-radius: 999px;
-  background: linear-gradient(135deg, var(--points), #ffca28);
-  color: #fff;
-  padding: 8px 13px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(135deg, var(--amber-500), #ffcf5c);
+  color: #7a5300;
+  padding: 8px 16px;
   font-weight: 800;
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-glow-amber);
 }
 
 .progress-bar {
   width: 100%;
-  height: 12px;
+  height: 10px;
   overflow: hidden;
-  border-radius: 999px;
-  background: #e0e0e0;
-  margin-bottom: 8px;
+  border-radius: var(--r-pill);
+  background: var(--ink-100);
+  margin-bottom: var(--space-2);
 }
 
 .progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--secondary), #6ecf8b);
-  transition: width 0.3s ease;
+  background: linear-gradient(90deg, var(--secondary-600), var(--secondary-500), #6ee7a8);
+  transition: width 0.5s var(--ease-spring);
 }
 
 .rewards-panel > small {
-  color: var(--text-muted);
+  color: var(--ink-500);
+  font-size: var(--fs-xs);
+  font-weight: 600;
 }
 
 .reward-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-  border: 1px solid var(--border);
-  padding: 16px;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  border: 1px solid var(--border-soft);
+  padding: var(--space-4);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.reward-item:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .reward-item > span {
-  font-size: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-md);
+  background: var(--amber-100);
+  font-size: 1.8rem;
+  flex-shrink: 0;
 }
 
 .reward-text {
@@ -2388,28 +2960,38 @@ select:focus {
 .reward-text strong {
   display: block;
   margin-bottom: 4px;
+  font-size: var(--fs-base);
+  font-weight: 800;
+  color: var(--ink-900);
 }
 
 .reward-text small {
-  color: var(--primary);
+  color: var(--primary-700);
   font-weight: 800;
+  font-size: var(--fs-xs);
 }
 
 .reward-item button {
-  background: linear-gradient(135deg, var(--primary), #1f80eb);
-  padding: 11px 14px;
+  background: linear-gradient(135deg, var(--primary-600), var(--primary-500));
+  padding: 11px 16px;
   white-space: nowrap;
-  box-shadow: 0 8px 16px rgba(0, 102, 204, 0.18);
+  box-shadow: var(--shadow-glow-primary);
+  font-size: var(--fs-sm);
 }
 
 .reward-item button.locked {
-  background: #b5b5b5;
+  background: var(--ink-100);
+  color: var(--ink-500);
   box-shadow: none;
 }
 
 .empty-state {
   margin: 0;
-  color: var(--text-muted);
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--ink-500);
+  font-size: var(--fs-sm);
+  font-weight: 600;
 }
 
 .modal-backdrop {
@@ -2419,101 +3001,137 @@ select:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.55);
-  padding: 18px;
+  background: rgba(16, 24, 40, 0.55);
+  backdrop-filter: blur(4px);
+  padding: var(--space-4);
+  animation: fadeIn 0.2s ease;
 }
 
 .confirmation-modal {
-  width: min(430px, 100%);
-  border: 1px solid rgba(0, 102, 204, 0.1);
-  border-radius: 18px;
-  background: #fff;
-  padding: 22px;
-  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.22);
+  width: min(440px, 100%);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-lg);
+  animation: modalIn 0.28s var(--ease-spring);
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .confirmation-modal h4 {
-  margin: 0 0 12px;
-  color: var(--primary);
-  font-size: 1.3rem;
+  margin: 0 0 var(--space-3);
+  color: var(--ink-900);
+  font-size: var(--fs-lg);
+  font-weight: 800;
 }
 
 .confirmation-modal p {
-  margin: 0 0 18px;
-  line-height: 1.5;
+  margin: 0 0 var(--space-5);
+  color: var(--ink-700);
+  line-height: 1.6;
 }
 
 .confirmation-modal .modal-actions button {
-  min-height: 46px;
+  min-height: 48px;
   flex: 1;
+  border-radius: var(--r-md);
 }
 
 .auth-shell {
   display: grid;
   min-height: 100vh;
   place-items: center;
-  background: linear-gradient(180deg, #edf5ff, #f5f8ff 42%, #f6f6f6);
-  padding: 24px;
+  background:
+    radial-gradient(900px 500px at 15% 0%, #e3f0ff 0%, transparent 60%),
+    radial-gradient(700px 400px at 100% 100%, #e6f8ee 0%, transparent 55%),
+    linear-gradient(180deg, #f7fafd, #f2f4f8);
+  padding: var(--space-5);
 }
 
 .auth-card {
-  width: min(430px, 100%);
-  border: 1px solid rgba(0, 102, 204, 0.1);
-  border-radius: 24px;
-  background: #fff;
-  padding: 28px 24px;
-  box-shadow: 0 16px 32px rgba(17, 24, 39, 0.1);
+  width: min(440px, 100%);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-xl);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  padding: var(--space-6) var(--space-5);
+  box-shadow: var(--shadow-lg);
+  animation: fadeIn 0.4s var(--ease-out);
 }
 
 .auth-brand {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
 }
 
 .auth-brand h2 {
-  margin: 8px 0 0;
-  color: var(--primary);
+  margin: var(--space-2) 0 0;
+  background: linear-gradient(120deg, var(--primary-700), var(--primary-500));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
   font-size: 2rem;
+  font-weight: 800;
 }
 
 .auth-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-4);
 }
 
 .auth-form label {
-  color: var(--text-dark);
+  color: var(--ink-700);
   text-transform: none;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+
+.auth-submit {
+  margin-top: var(--space-2);
 }
 
 .auth-hint {
-  margin: 12px 0 0;
-  color: var(--text-muted);
-  font-size: 0.9rem;
+  margin: var(--space-4) 0 0;
+  color: var(--ink-500);
+  font-size: var(--fs-sm);
   text-align: center;
+  line-height: 1.5;
 }
 
 .auth-switch {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  margin-top: 18px;
-  color: var(--text-muted);
-  font-size: 0.92rem;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+  color: var(--ink-500);
+  font-size: var(--fs-sm);
 }
 
 .link-button {
   border: none;
   background: transparent;
-  color: var(--primary);
+  color: var(--primary-600);
   padding: 0;
   font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.2s ease;
+}
+
+.link-button:hover {
+  text-decoration-color: var(--primary-600);
+  transform: none;
 }
 
 @media (max-width: 640px) {
   .app-shell {
-    padding: 20px 14px 32px;
+    padding: var(--space-5) var(--space-3) var(--space-6);
   }
 
   .topbar {
@@ -2521,11 +3139,21 @@ select:focus {
   }
 
   .topbar h1 {
-    font-size: 1.7rem;
+    font-size: 1.6rem;
   }
 
   .logout-btn {
-    padding: 9px 13px;
+    padding: 9px 14px;
+  }
+
+  .tab-nav {
+    width: 100%;
+  }
+
+  .tab {
+    flex: 1;
+    text-align: center;
+    padding: 10px 12px;
   }
 
   .quick-actions,
@@ -2556,13 +3184,21 @@ select:focus {
   }
 
   .schedule-form {
-    padding: 18px;
+    padding: var(--space-4);
   }
 
   .panel {
-    padding: 16px;
+    padding: var(--space-4);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 
 ==================== package.json ====================
 {
@@ -2574,7 +3210,7 @@ select:focus {
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
-    "check-env": "node -e \"const e = process.env; console.log('✓ VITE_SUPABASE_URL:', e.VITE_SUPABASE_URL ? 'SET' : 'MISSING'); console.log('✓ VITE_SUPABASE_ANON_KEY:', e.VITE_SUPABASE_ANON_KEY ? 'SET' : 'MISSING');\"",
+    "check-env": "node -e \"const e = process.env; console.log('\u2713 VITE_SUPABASE_URL:', e.VITE_SUPABASE_URL ? 'SET' : 'MISSING'); console.log('\u2713 VITE_SUPABASE_ANON_KEY:', e.VITE_SUPABASE_ANON_KEY ? 'SET' : 'MISSING');\"",
     "validate": "bash setup-validate.sh"
   },
   "dependencies": {
@@ -2587,7 +3223,6 @@ select:focus {
     "vite": "^5.4.10"
   }
 }
-
 
 ==================== App.js ====================
 import React from 'react';

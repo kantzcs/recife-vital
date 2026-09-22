@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
-    "check-env": "node -e \"const e = process.env; console.log('✓ VITE_SUPABASE_URL:', e.VITE_SUPABASE_URL ? 'SET' : 'MISSING'); console.log('✓ VITE_SUPABASE_ANON_KEY:', e.VITE_SUPABASE_ANON_KEY ? 'SET' : 'MISSING');\"",
+    "check-env": "node -e \"const e = process.env; console.log('\u2713 VITE_SUPABASE_URL:', e.VITE_SUPABASE_URL ? 'SET' : 'MISSING'); console.log('\u2713 VITE_SUPABASE_ANON_KEY:', e.VITE_SUPABASE_ANON_KEY ? 'SET' : 'MISSING');\"",
     "validate": "bash setup-validate.sh"
   },
   "dependencies": {
