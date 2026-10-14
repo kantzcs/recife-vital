@@ -1,0 +1,72 @@
+.rv-notice {
+  position: fixed;
+  right: 24px;
+  bottom: 100px;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: min(520px, calc(100vw - 32px));
+  padding: 20px;
+  background: #ffffff;
+  color: #093b53;
+  border: 1px solid #a5f4c2;
+  border-radius: 24px;
+  box-shadow: 0 12px 36px rgba(9, 59, 83, 0.18);
+}
+
+.rv-notice-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #00ce78;
+  color: #ffffff;
+  font-size: 26px;
+}
+
+.rv-notice strong {
+  font-size: 18px;
+}
+
+.rv-notice p {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.rv-notice button {
+  border: 0;
+  border-radius: 999px;
+  background: #093b53;
+  color: #ffffff;
+  padding: 12px 16px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.rv-notice button:focus-visible {
+  outline: 3px solid #00ce78;
+  outline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .rv-notice {
+    right: 16px;
+    bottom: 96px;
+    gap: 10px;
+    padding: 16px;
+    flex-wrap: wrap;
+  }
+
+  .rv-notice > div {
+    flex: 1;
+    min-width: 160px;
+  }
+
+  .rv-notice button {
+    margin-left: auto;
+  }
+}

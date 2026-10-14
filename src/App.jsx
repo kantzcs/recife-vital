@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 import "./styles.css";
+import "./notifications.css";
 
 const MAX_APPOINTMENTS = 4;
 
@@ -163,6 +164,8 @@ const CoinIcon = ({ size = 22 }) => (
 );
 
 export default function App() {
+  const [visualNotice, setVisualNotice] = useState(null);
+  const notify = (message) => setVisualNotice(message);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState("login");
   const [authForm, setAuthForm] = useState({
@@ -750,6 +753,8 @@ export default function App() {
     if (!saved) {
       setPoints(points);
       setRewards(rewards);
+    } else {
+      notify("Resgate registrado no aplicativo. Nenhuma notificação externa foi enviada.");
     }
   };
 
@@ -843,6 +848,7 @@ export default function App() {
         await syncAgendaFromSupabase(profileId);
       }
 
+      notify("Presença registrada no aplicativo. Nenhuma notificação externa foi enviada.");
       setConfirmation(null);
       return;
     }
@@ -912,6 +918,7 @@ export default function App() {
         setAgenda((current) => [nextItem, ...current]);
       }
 
+      notify(isSupabaseEnabled && profileId ? "Agendamento salvo no aplicativo. Isso não confirma uma consulta com a unidade de saúde." : "Agendamento registrado nesta demonstração. Nenhuma consulta real foi marcada.");
       setActiveTab("Agenda");
       setSelectedCard("agenda");
       setForm({
@@ -1629,6 +1636,14 @@ export default function App() {
         {activeTab === "Agenda" && renderAgenda()}
         {activeTab === "Recompensas" && renderRewards()}
       </main>
+
+      {visualNotice && (
+        <div className="rv-notice" role="status" aria-live="polite">
+          <span className="rv-notice-icon" aria-hidden="true">✓</span>
+          <div><strong>Confirmação</strong><p>{visualNotice}</p></div>
+          <button type="button" onClick={() => setVisualNotice(null)} aria-label="Fechar confirmação">Entendi</button>
+        </div>
+      )}
 
       {confirmation && (
         <div
