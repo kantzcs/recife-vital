@@ -2,6 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 import "./styles.css";
 import "./notifications.css";
+import ProfileScreen from "./screens/ProfileScreen.jsx";
+import AccountMenu from "./components/AccountMenu.jsx";
+import AuthScreen from "./screens/AuthScreen.jsx";
+import HomeScreen from "./screens/HomeScreen.jsx";
+import AgendaScreen from "./screens/AgendaScreen.jsx";
+import RewardsScreen from "./screens/RewardsScreen.jsx";
+import ConsultationsScreen from "./screens/ConsultationsScreen.jsx";
+import "./canva.css";
 
 const MAX_APPOINTMENTS = 4;
 
@@ -107,7 +115,7 @@ const HEALTH_TIPS = [
   },
 ];
 
-const tabs = ["Início", "Agenda", "Recompensas"];
+const tabs = ["Início", "Agenda", "Consultas", "Recompensas", "Perfil"];
 
 const OPENING_HOUR = 7;
 const CLOSING_HOUR = 22;
@@ -164,6 +172,7 @@ const CoinIcon = ({ size = 22 }) => (
 );
 
 export default function App() {
+  const [menuOpen, setMenuOpen] = useState(false);
   const [visualNotice, setVisualNotice] = useState(null);
   const notify = (message) => setVisualNotice(message);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -399,7 +408,8 @@ export default function App() {
 
   const saveRewardsToSupabase = async (nextPoints, nextRewards) => {
     if (!isSupabaseEnabled || !supabase || !profileId) {
-      return true;
+      setAppointmentError("Sessão ou perfil indisponível. Não foi possível salvar.");
+      return false;
     }
 
     const redeemedIds = nextRewards
@@ -512,34 +522,7 @@ export default function App() {
     }
 
     if (!isSupabaseEnabled || !supabase) {
-      if (authMode === "signup") {
-        setIsLoggedIn(true);
-        setAuthForm((current) => ({
-          ...current,
-          password: "",
-          confirmPassword: "",
-        }));
-        return;
-      }
-
-      const isTestAccount =
-        authForm.email.trim().toLowerCase() === "usuario@recifevital.com" &&
-        authForm.password === "123456";
-
-      if (!isTestAccount) {
-        setAuthError(
-          "Conta não encontrada. Use usuario@recifevital.com e senha 123456 ou crie uma conta."
-        );
-        return;
-      }
-
-      setIsLoggedIn(true);
-      setAuthForm((current) => ({
-        ...current,
-        name: current.name || "Usuário",
-        password: "",
-        confirmPassword: "",
-      }));
+      setAuthError("A conexão com o Supabase não está configurada.");
       return;
     }
 
@@ -557,6 +540,13 @@ export default function App() {
 
         if (error) {
           setAuthError(error.message);
+          return;
+        }
+
+        if (!data.session) {
+          setAuthError("Cadastro recebido. Confirme seu e-mail antes de entrar.");
+          setAuthMode("login");
+          setAuthForm((current) => ({ ...current, password: "", confirmPassword: "" }));
           return;
         }
 
@@ -587,7 +577,7 @@ export default function App() {
       });
 
       if (error) {
-        setAuthError("Não foi possível fazer login. Verifique as credenciais.");
+        setAuthError(error.message);
         return;
       }
 
@@ -617,9 +607,20 @@ export default function App() {
 
   const handleLogout = async () => {
     if (isSupabaseEnabled && supabase) {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        setAppointmentError(`Não foi possível sair: ${error.message}`);
+        setMenuOpen(false);
+        return;
+      }
     }
 
+    setMenuOpen(false);
+    setVisualNotice(null);
+    setConfirmation(null);
+    setActiveTab("Início");
+    setShowDetails(false);
+    setSelectedCard("home");
     setIsLoggedIn(false);
     setAuthMode("login");
     setProfileId(null);
@@ -754,7 +755,7 @@ export default function App() {
       setPoints(points);
       setRewards(rewards);
     } else {
-      notify("Resgate registrado no aplicativo. Nenhuma notificação externa foi enviada.");
+      notify("Resgate salvo.");
     }
   };
 
@@ -795,6 +796,12 @@ export default function App() {
 
   const handleConfirmationAction = async () => {
     if (!confirmation) return;
+    if (["schedule", "presence", "delete"].includes(confirmation.type) &&
+        (!isSupabaseEnabled || !supabase || !profileId)) {
+      setAppointmentError("Sessão ou perfil indisponível. A operação não foi salva.");
+      setConfirmation(null);
+      return;
+    }
 
     if (confirmation.type === "validation" || confirmation.type === "limit") {
       setConfirmation(null);
@@ -848,7 +855,7 @@ export default function App() {
         await syncAgendaFromSupabase(profileId);
       }
 
-      notify("Presença registrada no aplicativo. Nenhuma notificação externa foi enviada.");
+      notify("Presença registrada.");
       setConfirmation(null);
       return;
     }
@@ -918,7 +925,7 @@ export default function App() {
         setAgenda((current) => [nextItem, ...current]);
       }
 
-      notify(isSupabaseEnabled && profileId ? "Agendamento salvo no aplicativo. Isso não confirma uma consulta com a unidade de saúde." : "Agendamento registrado nesta demonstração. Nenhuma consulta real foi marcada.");
+      notify("Agendamento salvo no aplicativo.");
       setActiveTab("Agenda");
       setSelectedCard("agenda");
       setForm({
@@ -935,675 +942,14 @@ export default function App() {
 
   const nextAppointment = agenda[0] ?? null;
 
-  const renderAuthScreen = () => (
-    <div className="auth-shell">
-      <div className="auth-card">
-        <div className="auth-brand">
-          <p className="eyebrow">Recife Vital · HIPERDIA</p>
-          <h2>{authMode === "login" ? "Entrar" : "Criar conta"}</h2>
-        </div>
 
-        <form className="auth-form" onSubmit={handleAuthSubmit}>
-          {authError && <p className="location-error">{authError}</p>}
 
-          {authMode === "signup" && (
-            <label>
-              Nome
-              <input
-                type="text"
-                value={authForm.name}
-                onChange={(event) =>
-                  setAuthForm((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
-                placeholder="Seu nome"
-                required
-              />
-            </label>
-          )}
 
-          <label>
-            E-mail
-            <input
-              type="email"
-              value={authForm.email}
-              onChange={(event) =>
-                setAuthForm((current) => ({
-                  ...current,
-                  email: event.target.value,
-                }))
-              }
-              placeholder="seuemail@exemplo.com"
-              required
-            />
-          </label>
 
-          <label>
-            Senha
-            <input
-              type="password"
-              value={authForm.password}
-              onChange={(event) =>
-                setAuthForm((current) => ({
-                  ...current,
-                  password: event.target.value,
-                }))
-              }
-              placeholder="Sua senha"
-              required
-            />
-          </label>
-
-          {authMode === "signup" && (
-            <label>
-              Confirmar senha
-              <input
-                type="password"
-                value={authForm.confirmPassword}
-                onChange={(event) =>
-                  setAuthForm((current) => ({
-                    ...current,
-                    confirmPassword: event.target.value,
-                  }))
-                }
-                placeholder="Repita sua senha"
-                required
-              />
-            </label>
-          )}
-
-          <button type="submit" className="primary-submit auth-submit">
-            {authMode === "login" ? "Entrar" : "Cadastrar"}
-          </button>
-        </form>
-
-        <p className="auth-hint">
-          {authMode === "login"
-            ? "Entre para acompanhar sua pressão, glicemia, agenda e recompensas."
-            : "Crie sua conta para registrar suas medidas e acumular pontos."}
-        </p>
-
-        <div className="auth-switch">
-          <span>
-            {authMode === "login"
-              ? "Ainda não tem conta?"
-              : "Já tem uma conta?"}
-          </span>
-
-          <button
-            type="button"
-            className="link-button"
-            onClick={() => {
-              setAuthError("");
-              setAuthMode((current) =>
-                current === "login" ? "signup" : "login"
-              );
-            }}
-          >
-            {authMode === "login" ? "Cadastre-se" : "Fazer login"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderHome = () => (
-    <>
-      <section className="hero-card">
-        <div className="hero-header">
-          <span className="tag">PRÓXIMO ATENDIMENTO</span>
-
-          <button
-            className="mini-button"
-            onClick={() => handleQuickAction("details")}
-          >
-            {showDetails ? "Ocultar detalhes" : "Ver detalhes"}
-          </button>
-        </div>
-
-        <h2>
-          {nextAppointment
-            ? `${nextAppointment.date} - ${nextAppointment.time}`
-            : "Sem atendimento agendado"}
-        </h2>
-
-        <p className="home-location">
-          {nextAppointment
-            ? nextAppointment.location
-            : "Agende sua próxima aferição ou consulta HIPERDIA"}
-        </p>
-
-        {nextAppointment && daysUntilNextAppointment !== null && (
-          <p className="home-countdown">
-            {daysUntilNextAppointment <= 0
-              ? "É hoje!"
-              : daysUntilNextAppointment === 1
-                ? "Falta 1 dia"
-                : `Faltam ${daysUntilNextAppointment} dias`}
-          </p>
-        )}
-
-        {showDetails && (
-          <div className="details-box">
-            <p>
-              {nextAppointment
-                ? "Atendimento agendado. Compareça no horário informado."
-                : "Ainda não há atendimento cadastrado."}
-            </p>
-
-            <p>
-              {nextAppointment
-                ? `${nextAppointment.type} em ${nextAppointment.location}.`
-                : "Abra a agenda para realizar seu primeiro agendamento."}
-            </p>
-
-            {nextAppointmentLocation && (
-              <p>
-                📞 Telefone: {nextAppointmentLocation.phone}
-              </p>
-            )}
-          </div>
-        )}
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <h3>Registrar minhas medidas</h3>
-        </div>
-
-        <form className="vitals-form" onSubmit={handleVitalsSubmit}>
-          <div className="field-grid">
-            <label>
-              Pressão sistólica
-              <input
-                type="number"
-                inputMode="numeric"
-                placeholder="Ex: 120"
-                value={vitals.systolic}
-                onChange={(event) =>
-                  setVitals((current) => ({
-                    ...current,
-                    systolic: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <label>
-              Pressão diastólica
-              <input
-                type="number"
-                inputMode="numeric"
-                placeholder="Ex: 80"
-                value={vitals.diastolic}
-                onChange={(event) =>
-                  setVitals((current) => ({
-                    ...current,
-                    diastolic: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <label>
-              Glicemia (mg/dL)
-              <input
-                type="number"
-                inputMode="numeric"
-                placeholder="Opcional"
-                value={vitals.glucose}
-                onChange={(event) =>
-                  setVitals((current) => ({
-                    ...current,
-                    glucose: event.target.value,
-                  }))
-                }
-              />
-            </label>
-          </div>
-
-          {vitalsError && <p className="location-error">{vitalsError}</p>}
-
-          <button type="submit" className="secondary vitals-submit">
-            Salvar registro
-          </button>
-        </form>
-
-        {lastVitals && (
-          <div className="vitals-summary">
-            <div className={`vitals-badge ${pressureStatus}`}>
-              <span role="img" aria-label="Pressão">❤</span>
-              <div>
-                <strong>
-                  {lastVitals.systolic}/{lastVitals.diastolic} mmHg
-                </strong>
-                <small>Pressão {pressureStatus}</small>
-              </div>
-            </div>
-
-            {lastVitals.glucose && (
-              <div className={`vitals-badge ${glucoseStatus}`}>
-                <span role="img" aria-label="Glicemia">🩸</span>
-                <div>
-                  <strong>{lastVitals.glucose} mg/dL</strong>
-                  <small>Glicemia {glucoseStatus}</small>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {vitalsHistory.length > 0 && (
-          <div className="vitals-history">
-            <h4>Histórico recente</h4>
-            {vitalsHistory.map((entry) => (
-              <div className="vitals-history-item" key={entry.id}>
-                <span>{entry.recordedAt}</span>
-                <strong>
-                  {entry.systolic}/{entry.diastolic} mmHg
-                  {entry.glucose ? ` · ${entry.glucose} mg/dL` : ""}
-                </strong>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="quick-actions">
-        <button
-          className={
-            selectedCard === "agenda"
-              ? "quick-card active"
-              : "quick-card"
-          }
-          onClick={() => handleQuickAction("agenda")}
-        >
-          <span role="img" aria-label="Agendar">📅</span>
-          <strong>Agendar</strong>
-        </button>
-
-        <button
-          className={
-            selectedCard === "rewards"
-              ? "quick-card active"
-              : "quick-card"
-          }
-          onClick={() => handleQuickAction("rewards")}
-        >
-          <span role="img" aria-label="Recompensas">🎁</span>
-          <strong>Recompensas</strong>
-        </button>
-
-        <button
-          className={
-            selectedCard === "home"
-              ? "quick-card active"
-              : "quick-card"
-          }
-          onClick={() => handleQuickAction("home")}
-        >
-          <span role="img" aria-label="Resumo">📊</span>
-          <strong>Resumo</strong>
-        </button>
-      </section>
-
-      <section className="stats-grid">
-        <button
-          className="stat-card points"
-          onClick={() => handleQuickAction("rewards")}
-        >
-          <span className="icon-badge"><CoinIcon /></span>
-          <strong>{points} pts</strong>
-          <small>Saldo Recife Saudável</small>
-        </button>
-
-        <button
-          className="stat-card blue"
-          onClick={() => handleQuickAction("agenda")}
-        >
-          <span role="img" aria-label="Pendências">⏳</span>
-          <strong>{pendingItems.length}</strong>
-          <small>Pendências em aberto</small>
-        </button>
-
-        <button
-          className="stat-card green"
-          onClick={() => handleQuickAction("agenda")}
-        >
-          <span role="img" aria-label="Atendimentos ativos">🩺</span>
-          <strong>
-            {Math.min(activeAppointments, MAX_APPOINTMENTS)}/
-            {MAX_APPOINTMENTS}
-          </strong>
-          <small>Atendimentos ativos</small>
-        </button>
-
-        <button
-          className="stat-card red"
-          onClick={() => handleQuickAction("agenda")}
-        >
-          <span role="img" aria-label="Status">✅</span>
-          <strong>
-            {pendingItems.length === 0
-              ? "Tudo ok"
-              : `${pendingItems.length} pendente${
-                  pendingItems.length === 1 ? "" : "s"
-                }`}
-          </strong>
-          <small>Controle de atenções</small>
-        </button>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <h3>Seu progresso</h3>
-        </div>
-
-        <div className="progress-summary">
-          <div>
-            <strong>{totalPointsEarned}</strong>
-            <small>pontos ganhos com presenças confirmadas</small>
-          </div>
-
-          <div>
-            <strong>{agenda.filter((item) => item.confirmed).length}</strong>
-            <small>atendimentos concluídos</small>
-          </div>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <h3>Dicas para hipertensão e diabetes</h3>
-        </div>
-
-        <div className="tips-list">
-          {HEALTH_TIPS.map((tip) => (
-            <div className="tip-item" key={tip.id}>
-              <span role="img" aria-label={tip.title}>{tip.icon}</span>
-              <div>
-                <strong>{tip.title}</strong>
-                <p>{tip.text}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    </>
-  );
-
-  const renderAgenda = () => (
-    <section className="panel panel-stack">
-      <div className="panel-header">
-        <h3>Sua Agenda</h3>
-
-        <button
-          className="mini-button"
-          onClick={() => handleQuickAction("home")}
-        >
-          Voltar ao início
-        </button>
-      </div>
-
-      <div className="status-banner">
-        <span>Limite de agendamentos</span>
-        <strong>
-          {activeAppointments}/{MAX_APPOINTMENTS}
-        </strong>
-      </div>
-
-      <div className="pending-panel">
-        <div className="pending-head">
-          <h4>Pendências</h4>
-          <span className="pending-badge">{pendingItems.length}</span>
-        </div>
-
-        {pendingItems.length === 0 ? (
-          <p className="empty-state">Nenhuma pendência por enquanto.</p>
-        ) : (
-          pendingItems.map((item) => (
-            <div className="pending-item" key={item.id}>
-              <div>
-                <strong>{item.type}</strong>
-                <p>
-                  {item.date} às {item.time}
-                </p>
-              </div>
-
-              <div className="pending-actions">
-                <button
-                  className="small-button success"
-                  onClick={() => handleConfirmPresence(item.id)}
-                >
-                  Confirmar
-                </button>
-
-                <button
-                  className="small-button danger"
-                  onClick={() => handleDeleteAppointment(item.id)}
-                >
-                  Excluir
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      <form className="schedule-form" onSubmit={handleScheduleSubmit}>
-        <div className="field-grid">
-          <label>
-            Tipo de atendimento
-            <select
-              value={form.type}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  type: event.target.value,
-                }))
-              }
-            >
-              {APPOINTMENT_TYPES.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.value}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Data
-            <input
-              type="date"
-              min={getMinDate()}
-              value={form.date}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  date: event.target.value,
-                  time: "",
-                }))
-              }
-            />
-          </label>
-
-          <label>
-            Horário
-            <select
-              value={form.time}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  time: event.target.value,
-                }))
-              }
-              disabled={!form.date}
-            >
-              <option value="">
-                {form.date ? "Selecione um horário" : "Escolha a data primeiro"}
-              </option>
-              {availableTimeSlots.map((slot) => (
-                <option key={slot} value={slot}>
-                  {slot}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            UPA
-            <select
-              value={form.locationId}
-              onChange={(event) => {
-                setForm((current) => ({
-                  ...current,
-                  locationId: event.target.value,
-                }));
-                setSelectedLocationId(event.target.value);
-                setAppointmentError("");
-              }}
-            >
-              <option value="">Selecione uma UPA</option>
-              {RECIFE_HEALTH_LOCATIONS.map((place) => (
-                <option key={place.id} value={place.id}>
-                  {place.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        {form.date && availableTimeSlots.length === 0 && (
-          <p className="location-error">
-            Não há mais horários disponíveis hoje. Escolha outra data.
-          </p>
-        )}
-
-        {appointmentError && (
-          <p className="location-error">{appointmentError}</p>
-        )}
-
-        {selectedLocation && (
-          <p className="selected-location-message">
-            UPA selecionada: <strong>{selectedLocation.name}</strong> —{" "}
-            {selectedLocation.area} · 📞 {selectedLocation.phone}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          className="primary-submit"
-          disabled={limitReached}
-        >
-          {limitReached ? "Limite atingido" : "Agendar"}
-        </button>
-      </form>
-
-      <div className="panel">
-        <div className="panel-header">
-          <h4>Unidades disponíveis</h4>
-        </div>
-
-        <div className="location-results">
-          {RECIFE_HEALTH_LOCATIONS.map((place) => (
-            <div className="location-result" key={place.id}>
-              <strong>{place.name}</strong>
-              <span>{place.area}</span>
-              <span className="location-hours">
-                {place.hours} · 📞 {place.phone}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {agenda.map((item) => (
-        <div className="agenda-item" key={item.id}>
-          <div className="agenda-head">
-            <strong>{item.type}</strong>
-            <span>{item.points} pts</span>
-          </div>
-
-          <p>
-            {item.date} às {item.time}
-          </p>
-
-          <p className="agenda-location">{item.location}</p>
-
-          <div className="agenda-actions">
-            <button
-              className="agenda-action secondary"
-              onClick={() => handleConfirmPresence(item.id)}
-              disabled={item.confirmed}
-            >
-              {item.confirmed ? "Confirmado" : "Confirmar presença"}
-            </button>
-
-            <button
-              className="agenda-action ghost danger"
-              onClick={() => handleDeleteAppointment(item.id)}
-            >
-              Excluir
-            </button>
-          </div>
-        </div>
-      ))}
-    </section>
-  );
-
-  const renderRewards = () => (
-    <section className="panel rewards-panel">
-      <div className="rewards-header">
-        <h3>Recompensas</h3>
-        <div className="points-box">{points} pts</div>
-      </div>
-
-      <div className="progress-bar">
-        <div
-          className="progress-fill"
-          style={{ width: `${nextLevelProgress}%` }}
-        />
-      </div>
-
-      <small>{points}/500 para o próximo nível</small>
-
-      {!rewardsLoaded && isSupabaseEnabled && (
-        <p className="empty-state">Carregando pontos e recompensas...</p>
-      )}
-
-      {rewards.map((reward) => {
-        const isDisabled = reward.redeemed || points < reward.cost;
-
-        return (
-          <div className="reward-item" key={reward.id}>
-            <span role="img" aria-label={reward.title}>{reward.icon}</span>
-
-            <div className="reward-text">
-              <strong>{reward.title}</strong>
-              <small>{reward.cost} pts</small>
-            </div>
-
-            <button
-              className={isDisabled ? "locked" : ""}
-              onClick={() => handleRedeem(reward.id)}
-              disabled={isDisabled}
-            >
-              {reward.redeemed
-                ? "Resgatado"
-                : points < reward.cost
-                  ? `Faltam ${reward.cost - points} pts`
-                  : "Resgatar"}
-            </button>
-          </div>
-        );
-      })}
-    </section>
-  );
+  const context = { authMode, authForm, authError, handleAuthSubmit, setAuthForm, setAuthError, setAuthMode, nextAppointment, showDetails, handleQuickAction, daysUntilNextAppointment, nextAppointmentLocation, vitals, handleVitalsSubmit, setVitals, vitalsError, lastVitals, pressureStatus, glucoseStatus, vitalsHistory, selectedCard, points, pendingItems, activeAppointments, MAX_APPOINTMENTS, CoinIcon, totalPointsEarned, agenda, HEALTH_TIPS, limitReached, handleConfirmPresence, handleDeleteAppointment, handleScheduleSubmit, form, setForm, APPOINTMENT_TYPES, getMinDate, availableTimeSlots, RECIFE_HEALTH_LOCATIONS, setSelectedLocationId, setAppointmentError, appointmentError, selectedLocation, nextLevelProgress, rewardsLoaded, isSupabaseEnabled, rewards, handleRedeem };
 
   if (!isLoggedIn) {
-    return renderAuthScreen();
+    return <AuthScreen context={context} />;
   }
 
   return (
@@ -1611,7 +957,17 @@ export default function App() {
       <header className="topbar">
         <div>
           <p className="eyebrow">Recife Vital · HIPERDIA</p>
-          <h1>Olá, {authForm.name || "usuário"}!</h1>
+          <button
+            type="button"
+            className="rv-menu-button"
+            aria-label="Abrir configurações"
+            aria-haspopup="dialog"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            ⋮
+          </button>
+          <h1>recife <span>VITAL</span></h1>
         </div>
 
         <button className="logout-btn" onClick={handleLogout}>
@@ -1619,12 +975,23 @@ export default function App() {
         </button>
       </header>
 
+      {menuOpen && (
+        <AccountMenu
+          onClose={() => setMenuOpen(false)}
+          onLogout={handleLogout}
+        />
+      )}
+
       <nav className="tab-nav" aria-label="Navegação principal">
         {tabs.map((tab) => (
           <button
             key={tab}
             className={activeTab === tab ? "tab active" : "tab"}
-            onClick={() => setActiveTab(tab)}
+            type="button"
+            onClick={() => {
+              setMenuOpen(false);
+              setActiveTab(tab);
+            }}
           >
             {tab}
           </button>
@@ -1632,9 +999,18 @@ export default function App() {
       </nav>
 
       <main className="content">
-        {activeTab === "Início" && renderHome()}
-        {activeTab === "Agenda" && renderAgenda()}
-        {activeTab === "Recompensas" && renderRewards()}
+        {activeTab === "Início" && <HomeScreen context={context} />}
+        {appointmentError && <p role="alert" className="location-error">{appointmentError}</p>}
+        {activeTab === "Consultas" && <ConsultationsScreen context={context} />}
+        {activeTab === "Perfil" && (
+          <ProfileScreen
+            onNameSaved={(name) =>
+              setAuthForm((current) => ({ ...current, name }))
+            }
+          />
+        )}
+        {activeTab === "Agenda" && <AgendaScreen context={context} />}
+        {activeTab === "Recompensas" && <RewardsScreen context={context} />}
       </main>
 
       {visualNotice && (
