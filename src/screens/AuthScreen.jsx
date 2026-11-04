@@ -154,7 +154,8 @@ export default function AuthScreen({ context }) {
         </div>
 
         <p className="auth-legal">
-          Ao entrar, você concorda com a nossa{" "}
+          Ao entrar, você concorda com os{" "}
+          <a href="/termos/" target="_blank" rel="noopener">Termos de Uso</a> e a{" "}
           <a href="/privacidade/" target="_blank" rel="noopener">Política de Privacidade</a>.
         </p>
       </main>
