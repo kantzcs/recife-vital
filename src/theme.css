@@ -871,3 +871,11 @@ textarea {
     padding-left: calc(20px + var(--space-3));
   }
 }
+
+.auth-legal {
+  margin-top: var(--space-5);
+  font-size: var(--fs-xs);
+  color: var(--ink-500);
+  text-align: center;
+}
+.auth-legal a { color: var(--brand); font-weight: 600; }
