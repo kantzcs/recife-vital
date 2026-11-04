@@ -1,51 +1,69 @@
+import { Coins } from "lucide-react";
+
 export default function RewardsScreen({ context }) {
-  const { authMode, authForm, authError, handleAuthSubmit, setAuthForm, setAuthError, setAuthMode, nextAppointment, showDetails, handleQuickAction, daysUntilNextAppointment, nextAppointmentLocation, vitals, handleVitalsSubmit, setVitals, vitalsError, lastVitals, pressureStatus, glucoseStatus, vitalsHistory, selectedCard, points, pendingItems, activeAppointments, MAX_APPOINTMENTS, CoinIcon, totalPointsEarned, agenda, HEALTH_TIPS, limitReached, handleConfirmPresence, handleDeleteAppointment, handleScheduleSubmit, form, setForm, APPOINTMENT_TYPES, getMinDate, availableTimeSlots, RECIFE_HEALTH_LOCATIONS, setSelectedLocationId, setAppointmentError, appointmentError, selectedLocation, nextLevelProgress, rewardsLoaded, isSupabaseEnabled, rewards, handleRedeem } = context;
+  const { points, rewardsLoaded, isSupabaseEnabled, rewards, handleRedeem } = context;
+
+  const nextReward = rewards
+    .filter((reward) => !reward.redeemed && reward.cost > points)
+    .sort((a, b) => a.cost - b.cost)[0];
+
   return (
-    <section className="panel rewards-panel">
-      <div className="rewards-header">
-        <h3>Recompensas</h3>
-        <div className="points-box">{points} pts</div>
-      </div>
+    <>
+      <section className="balance-card" aria-live="polite">
+        <Coins className="balance-icon" aria-hidden="true" />
+        <div>
+          <small>Seu saldo</small>
+          <strong>
+            {points} <span>fichas vitais</span>
+          </strong>
+          {nextReward && (
+            <p>
+              Faltam {nextReward.cost - points} fichas pra trocar por: {nextReward.title}.
+            </p>
+          )}
+        </div>
+      </section>
 
-      <div className="progress-bar">
-        <div
-          className="progress-fill"
-          style={{ width: `${nextLevelProgress}%` }}
-        />
-      </div>
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Trocar fichas</h3>
+        </div>
 
-      <small>{points}/500 para o próximo nível</small>
+        {!rewardsLoaded && isSupabaseEnabled && (
+          <p className="empty-state">Carregando seu saldo…</p>
+        )}
 
-      {!rewardsLoaded && isSupabaseEnabled && (
-        <p className="empty-state">Carregando pontos e recompensas...</p>
-      )}
+        <ul className="row-list">
+          {rewards.map(({ id, icon: RewardIcon, title, detail, cost, redeemed }) => {
+            const missing = cost - points;
+            const disabled = redeemed || missing > 0;
 
-      {rewards.map((reward) => {
-        const isDisabled = reward.redeemed || points < reward.cost;
+            return (
+              <li className="row-item reward-row" key={id}>
+                <RewardIcon className="row-icon" aria-hidden="true" />
+                <div className="row-main">
+                  <strong>{title}</strong>
+                  <p>
+                    {detail} · {cost} fichas
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className={disabled ? "small-button locked" : "small-button success"}
+                  onClick={() => handleRedeem(id)}
+                  disabled={disabled}
+                >
+                  {redeemed ? "Resgatado" : missing > 0 ? `Faltam ${missing}` : "Trocar"}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
 
-        return (
-          <div className="reward-item" key={reward.id}>
-            <span role="img" aria-label={reward.title}>{reward.icon}</span>
-
-            <div className="reward-text">
-              <strong>{reward.title}</strong>
-              <small>{reward.cost} pts</small>
-            </div>
-
-            <button
-              className={isDisabled ? "locked" : ""}
-              onClick={() => handleRedeem(reward.id)}
-              disabled={isDisabled}
-            >
-              {reward.redeemed
-                ? "Resgatado"
-                : points < reward.cost
-                  ? `Faltam ${reward.cost - points} pts`
-                  : "Resgatar"}
-            </button>
-          </div>
-        );
-      })}
-    </section>
+        <p className="form-note">
+          As recompensas ainda são demonstrativas: não há parceria ativa com VEM, cinemas ou Compaz.
+        </p>
+      </section>
+    </>
   );
 }

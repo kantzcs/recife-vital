@@ -1,18 +1,25 @@
+/* Perfil e menu de configurações. Usa as variáveis de tokens.css. */
+
 .rv-account-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 20px;
-  margin: 20px 0;
+  gap: var(--space-4);
+  margin: var(--space-3) 0 var(--space-5);
 }
 
 .rv-account h3 {
-  margin-top: 28px;
+  margin-top: var(--space-6);
+  font-size: var(--fs-base);
+}
+
+.rv-account h3 + .form-note {
+  margin-top: var(--space-1);
 }
 
 .rv-account-actions {
   display: flex;
-  gap: 12px;
-  margin-top: 24px;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
 }
 
 .rv-account-actions .primary-submit {
@@ -23,48 +30,140 @@
   position: fixed;
   inset: 0;
   z-index: 1200;
-  background: rgba(9, 59, 83, 0.33);
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(24, 45, 41, 0.32);
 }
 
 .rv-settings {
-  box-sizing: border-box;
-  width: min(380px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: min(360px, 100%);
   height: 100%;
   overflow-y: auto;
-  padding: 24px;
-  background: #ffffff;
-  color: #093b53;
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  color: var(--ink-900);
 }
 
-.rv-settings > button {
-  display: block;
+.rv-settings-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rv-settings-head h2 {
+  flex: 1;
+  font-size: var(--fs-md);
+}
+
+.settings-section {
+  margin: var(--space-2) 0 0;
+  color: var(--ink-500);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.settings-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-list li + li {
+  border-top: 1px solid var(--border);
+}
+
+.settings-list button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   width: 100%;
-  margin: 4px 0;
-  padding: 14px;
-  border-radius: 12px;
+  min-height: 52px;
+  padding: var(--space-2) 0;
+  color: var(--ink-900);
+  font-weight: 500;
   text-align: left;
 }
 
-.rv-settings > button:hover:not(:disabled) {
-  background: #d5ffe8;
+.settings-list button > svg:first-child {
+  width: 20px;
+  height: 20px;
+  color: var(--brand);
 }
 
-.rv-settings form {
+.settings-list button span {
+  flex: 1;
+}
+
+.settings-arrow {
+  width: 18px;
+  height: 18px;
+  color: var(--ink-300);
+}
+
+.settings-list button:disabled {
+  color: var(--ink-500);
+  opacity: 1;
+}
+
+.settings-list button:disabled > svg:first-child {
+  color: var(--ink-300);
+}
+
+.settings-logout {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding: var(--space-3) 0;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.rv-settings form,
+.settings-body {
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
+}
+
+.settings-body p {
+  margin: 0;
+  color: var(--ink-700);
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.segmented button {
+  min-height: 40px;
+  border-radius: var(--r-sm);
+  font-weight: 600;
+}
+
+.segmented button:hover {
+  background: var(--surface);
 }
 
 .rv-settings input {
   width: 100%;
 }
 
-.rv-settings button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 @media (max-width: 600px) {
   .rv-account-actions {
     flex-direction: column;
+  }
+
+  .rv-account-actions .primary-submit {
+    width: 100%;
   }
 }

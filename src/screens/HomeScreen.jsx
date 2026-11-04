@@ -1,183 +1,165 @@
+import { Activity, CalendarPlus, ChevronRight, Coins, MapPin, Phone } from "lucide-react";
+import { formatAppointment, greeting, parseBrDate } from "../lib/format.js";
+
 export default function HomeScreen({ context }) {
-  const { authMode, authForm, authError, handleAuthSubmit, setAuthForm, setAuthError, setAuthMode, nextAppointment, showDetails, handleQuickAction, daysUntilNextAppointment, nextAppointmentLocation, vitals, handleVitalsSubmit, setVitals, vitalsError, lastVitals, pressureStatus, glucoseStatus, vitalsHistory, selectedCard, points, pendingItems, activeAppointments, MAX_APPOINTMENTS, CoinIcon, totalPointsEarned, agenda, HEALTH_TIPS, limitReached, handleConfirmPresence, handleDeleteAppointment, handleScheduleSubmit, form, setForm, APPOINTMENT_TYPES, getMinDate, availableTimeSlots, RECIFE_HEALTH_LOCATIONS, setSelectedLocationId, setAppointmentError, appointmentError, selectedLocation, nextLevelProgress, rewardsLoaded, isSupabaseEnabled, rewards, handleRedeem } = context;
+  const {
+    userName,
+    nextAppointment,
+    showDetails,
+    handleQuickAction,
+    nextAppointmentLocation,
+    points,
+    pendingItems,
+    activeAppointments,
+    MAX_APPOINTMENTS,
+    totalPointsEarned,
+    agenda,
+    HEALTH_TIPS,
+  } = context;
+
+  const completed = agenda.filter((item) => item.confirmed).length;
+
+  // Contagem por dia do calendário. "Hoje" e "Amanhã" já aparecem no título.
+  const target = nextAppointment ? parseBrDate(nextAppointment.date) : null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const daysLeft = target ? Math.round((target - today) / 86400000) : null;
+  const countdown = daysLeft !== null && daysLeft > 1 ? `Faltam ${daysLeft} dias` : null;
+
   return (
     <>
-      <section className="hero-card">
-        <div className="hero-header">
-          <span className="tag">PRÓXIMO ATENDIMENTO</span>
-
-          <button
-            className="mini-button"
-            onClick={() => handleQuickAction("details")}
-          >
-            {showDetails ? "Ocultar detalhes" : "Ver detalhes"}
-          </button>
-        </div>
-
+      <section className="home-greeting">
         <h2>
-          {nextAppointment
-            ? `${nextAppointment.date} - ${nextAppointment.time}`
-            : "Sem atendimento agendado"}
+          {greeting()}
+          {userName ? `, ${userName}` : ""}.
         </h2>
-
-        <p className="home-location">
-          {nextAppointment
-            ? nextAppointment.location
-            : "Agende sua próxima aferição ou consulta HIPERDIA"}
+        <p>
+          {pendingItems.length === 0
+            ? "Nada pendente por aqui."
+            : pendingItems.length === 1
+              ? "Você tem 1 atendimento pra confirmar."
+              : `Você tem ${pendingItems.length} atendimentos pra confirmar.`}
         </p>
+      </section>
 
-        {nextAppointment && daysUntilNextAppointment !== null && (
-          <p className="home-countdown">
-            {daysUntilNextAppointment <= 0
-              ? "É hoje!"
-              : daysUntilNextAppointment === 1
-                ? "Falta 1 dia"
-                : `Faltam ${daysUntilNextAppointment} dias`}
-          </p>
-        )}
+      <section className="hero-card" aria-labelledby="next-appointment-title">
+        <div className="hero-header">
+          <span className="tag">Próximo atendimento</span>
+          {nextAppointment && countdown && (
+            <span className="hero-countdown">{countdown}</span>
+          )}
+        </div>
 
-        {showDetails && (
-          <div className="details-box">
-            <p>
-              {nextAppointment
-                ? "Atendimento agendado. Compareça no horário informado."
-                : "Ainda não há atendimento cadastrado."}
+        {nextAppointment ? (
+          <>
+            <h2 id="next-appointment-title">
+              {formatAppointment(nextAppointment.date, nextAppointment.time)}
+            </h2>
+            <p className="hero-type">{nextAppointment.type}</p>
+            <p className="home-location">
+              <MapPin size={16} aria-hidden="true" />
+              {nextAppointment.location}
             </p>
 
-            <p>
-              {nextAppointment
-                ? `${nextAppointment.type} em ${nextAppointment.location}.`
-                : "Abra a agenda para realizar seu primeiro agendamento."}
-            </p>
-
-            {nextAppointmentLocation && (
-              <p>
-                📞 Telefone: {nextAppointmentLocation.phone}
-              </p>
-            )}
-          </div>
-        )}
-      </section>
-
-      <section className="quick-actions">
-        <button
-          className={
-            selectedCard === "agenda"
-              ? "quick-card active"
-              : "quick-card"
-          }
-          onClick={() => handleQuickAction("agenda")}
-        >
-          <span role="img" aria-label="Agendar">📅</span>
-          <strong>Agendar</strong>
-        </button>
-
-        <button
-          className={
-            selectedCard === "rewards"
-              ? "quick-card active"
-              : "quick-card"
-          }
-          onClick={() => handleQuickAction("rewards")}
-        >
-          <span role="img" aria-label="Recompensas">🎁</span>
-          <strong>Recompensas</strong>
-        </button>
-
-        <button
-          className={
-            selectedCard === "home"
-              ? "quick-card active"
-              : "quick-card"
-          }
-          onClick={() => handleQuickAction("home")}
-        >
-          <span role="img" aria-label="Resumo">📊</span>
-          <strong>Resumo</strong>
-        </button>
-      </section>
-
-      <section className="stats-grid">
-        <button
-          className="stat-card points"
-          onClick={() => handleQuickAction("rewards")}
-        >
-          <span className="icon-badge"><CoinIcon /></span>
-          <strong>{points} pts</strong>
-          <small>Saldo Recife Saudável</small>
-        </button>
-
-        <button
-          className="stat-card blue"
-          onClick={() => handleQuickAction("agenda")}
-        >
-          <span role="img" aria-label="Pendências">⏳</span>
-          <strong>{pendingItems.length}</strong>
-          <small>Pendências em aberto</small>
-        </button>
-
-        <button
-          className="stat-card green"
-          onClick={() => handleQuickAction("agenda")}
-        >
-          <span role="img" aria-label="Atendimentos ativos">🩺</span>
-          <strong>
-            {Math.min(activeAppointments, MAX_APPOINTMENTS)}/
-            {MAX_APPOINTMENTS}
-          </strong>
-          <small>Atendimentos ativos</small>
-        </button>
-
-        <button
-          className="stat-card red"
-          onClick={() => handleQuickAction("agenda")}
-        >
-          <span role="img" aria-label="Status">✅</span>
-          <strong>
-            {pendingItems.length === 0
-              ? "Tudo ok"
-              : `${pendingItems.length} pendente${
-                  pendingItems.length === 1 ? "" : "s"
-                }`}
-          </strong>
-          <small>Controle de atenções</small>
-        </button>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <h3>Seu progresso</h3>
-        </div>
-
-        <div className="progress-summary">
-          <div>
-            <strong>{totalPointsEarned}</strong>
-            <small>pontos ganhos com presenças confirmadas</small>
-          </div>
-
-          <div>
-            <strong>{agenda.filter((item) => item.confirmed).length}</strong>
-            <small>atendimentos concluídos</small>
-          </div>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <h3>Dicas para hipertensão e diabetes</h3>
-        </div>
-
-        <div className="tips-list">
-          {HEALTH_TIPS.map((tip) => (
-            <div className="tip-item" key={tip.id}>
-              <span role="img" aria-label={tip.title}>{tip.icon}</span>
-              <div>
-                <strong>{tip.title}</strong>
-                <p>{tip.text}</p>
+            {showDetails && nextAppointmentLocation && (
+              <div className="details-box">
+                <p>{nextAppointmentLocation.area}</p>
+                <p>{nextAppointmentLocation.hours}</p>
+                <p>
+                  <Phone size={14} aria-hidden="true" />
+                  <a href={`tel:${nextAppointmentLocation.phone.replace(/\D/g, "")}`}>
+                    {nextAppointmentLocation.phone}
+                  </a>
+                </p>
               </div>
-            </div>
-          ))}
+            )}
+
+            <button
+              type="button"
+              className="link-button hero-toggle"
+              aria-expanded={showDetails}
+              onClick={() => handleQuickAction("details")}
+            >
+              {showDetails ? "Esconder endereço" : "Ver endereço e telefone"}
+            </button>
+          </>
+        ) : (
+          <>
+            <h2 id="next-appointment-title">Nenhum atendimento marcado</h2>
+            <p className="home-location">
+              Marque uma aferição de pressão ou consulta do HIPERDIA numa UPA perto de você.
+            </p>
+            <button
+              type="button"
+              className="primary-submit hero-cta"
+              onClick={() => handleQuickAction("agenda")}
+            >
+              Marcar atendimento
+            </button>
+          </>
+        )}
+      </section>
+
+      <section className="quick-actions" aria-label="Atalhos">
+        <button className="quick-card" type="button" onClick={() => handleQuickAction("agenda")}>
+          <CalendarPlus aria-hidden="true" />
+          <span>
+            <strong>Novo atendimento</strong>
+            <small>
+              {activeAppointments}/{MAX_APPOINTMENTS} marcados
+            </small>
+          </span>
+          <ChevronRight className="quick-arrow" aria-hidden="true" />
+        </button>
+
+        <button className="quick-card" type="button" onClick={() => handleQuickAction("vitals")}>
+          <Activity aria-hidden="true" />
+          <span>
+            <strong>Registrar medida</strong>
+            <small>Pressão e glicemia</small>
+          </span>
+          <ChevronRight className="quick-arrow" aria-hidden="true" />
+        </button>
+
+        <button className="quick-card coins" type="button" onClick={() => handleQuickAction("rewards")}>
+          <Coins aria-hidden="true" />
+          <span>
+            <strong>{points} fichas vitais</strong>
+            <small>Ver recompensas</small>
+          </span>
+          <ChevronRight className="quick-arrow" aria-hidden="true" />
+        </button>
+      </section>
+
+      {completed > 0 && (
+        <section className="panel progress-line">
+          <p>
+            Você já foi a <strong>{completed}</strong>{" "}
+            {completed === 1 ? "atendimento" : "atendimentos"} e ganhou{" "}
+            <strong>{totalPointsEarned} fichas</strong> com isso.
+          </p>
+        </section>
+      )}
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Pra cuidar no dia a dia</h3>
         </div>
+
+        <ul className="tips-list">
+          {HEALTH_TIPS.map(({ id, icon: TipIcon, title, text }) => (
+            <li className="tip-item" key={id}>
+              <TipIcon aria-hidden="true" />
+              <div>
+                <strong>{title}</strong>
+                <p>{text}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <p className="tips-note">
+          Essas dicas são gerais. Siga sempre a orientação da sua equipe de saúde.
+        </p>
       </section>
     </>
   );

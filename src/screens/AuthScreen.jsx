@@ -1,29 +1,68 @@
+import { CalendarDays, Coins, HeartPulse, LineChart } from "lucide-react";
+
 export default function AuthScreen({ context }) {
-  const { authMode, authForm, authError, handleAuthSubmit, setAuthForm, setAuthError, setAuthMode, nextAppointment, showDetails, handleQuickAction, daysUntilNextAppointment, nextAppointmentLocation, vitals, handleVitalsSubmit, setVitals, vitalsError, lastVitals, pressureStatus, glucoseStatus, vitalsHistory, selectedCard, points, pendingItems, activeAppointments, MAX_APPOINTMENTS, CoinIcon, totalPointsEarned, agenda, HEALTH_TIPS, limitReached, handleConfirmPresence, handleDeleteAppointment, handleScheduleSubmit, form, setForm, APPOINTMENT_TYPES, getMinDate, availableTimeSlots, RECIFE_HEALTH_LOCATIONS, setSelectedLocationId, setAppointmentError, appointmentError, selectedLocation, nextLevelProgress, rewardsLoaded, isSupabaseEnabled, rewards, handleRedeem } = context;
+  const { authMode, authForm, authError, handleAuthSubmit, setAuthForm, setAuthError, setAuthMode } = context;
+
+  const isLogin = authMode === "login";
+  const update = (key) => (event) =>
+    setAuthForm((current) => ({ ...current, [key]: event.target.value }));
+
   return (
     <div className="auth-shell">
-      <div className="auth-card">
+      <aside className="auth-side">
+        <div className="brand brand-light">
+          <span className="brand-mark" aria-hidden="true">
+            <HeartPulse size={22} strokeWidth={2.25} />
+          </span>
+          <span className="brand-name">Recife Vital</span>
+        </div>
+
+        <div className="auth-side-copy">
+          <h1>Seu cuidado, no seu ritmo.</h1>
+          <p>Pra quem acompanha pressão alta ou diabetes pelas UPAs do Recife.</p>
+        </div>
+
+        <ul className="auth-points">
+          <li>
+            <CalendarDays aria-hidden="true" />
+            Organize seus atendimentos do HIPERDIA
+          </li>
+          <li>
+            <LineChart aria-hidden="true" />
+            Anote pressão e glicemia em segundos
+          </li>
+          <li>
+            <Coins aria-hidden="true" />
+            Ganhe fichas vitais por cada atendimento
+          </li>
+        </ul>
+      </aside>
+
+      <main className="auth-card">
         <div className="auth-brand">
-          <p className="eyebrow">Recife Vital · HIPERDIA</p>
-          <h2>{authMode === "login" ? "Entrar" : "Criar conta"}</h2>
+          <div className="brand auth-mobile-brand">
+            <span className="brand-mark" aria-hidden="true">
+              <HeartPulse size={20} strokeWidth={2.25} />
+            </span>
+            <span className="brand-name">Recife Vital</span>
+          </div>
+          <h2>{isLogin ? "Que bom te ver de novo" : "Criar sua conta"}</h2>
+          <p className="auth-tagline">
+            {isLogin ? "Entre com seu e-mail e senha." : "Leva menos de um minuto."}
+          </p>
         </div>
 
         <form className="auth-form" onSubmit={handleAuthSubmit}>
-          {authError && <p className="location-error">{authError}</p>}
+          {authError && <p className="location-error" role="alert">{authError}</p>}
 
-          {authMode === "signup" && (
+          {!isLogin && (
             <label>
-              Nome
+              Como podemos te chamar?
               <input
                 type="text"
+                autoComplete="given-name"
                 value={authForm.name}
-                onChange={(event) =>
-                  setAuthForm((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
-                placeholder="Seu nome"
+                onChange={update("name")}
                 required
               />
             </label>
@@ -33,14 +72,9 @@ export default function AuthScreen({ context }) {
             E-mail
             <input
               type="email"
+              autoComplete="email"
               value={authForm.email}
-              onChange={(event) =>
-                setAuthForm((current) => ({
-                  ...current,
-                  email: event.target.value,
-                }))
-              }
-              placeholder="seuemail@exemplo.com"
+              onChange={update("email")}
               required
             />
           </label>
@@ -49,68 +83,45 @@ export default function AuthScreen({ context }) {
             Senha
             <input
               type="password"
+              autoComplete={isLogin ? "current-password" : "new-password"}
               value={authForm.password}
-              onChange={(event) =>
-                setAuthForm((current) => ({
-                  ...current,
-                  password: event.target.value,
-                }))
-              }
-              placeholder="Sua senha"
+              onChange={update("password")}
               required
             />
           </label>
 
-          {authMode === "signup" && (
+          {!isLogin && (
             <label>
-              Confirmar senha
+              Repita a senha
               <input
                 type="password"
+                autoComplete="new-password"
                 value={authForm.confirmPassword}
-                onChange={(event) =>
-                  setAuthForm((current) => ({
-                    ...current,
-                    confirmPassword: event.target.value,
-                  }))
-                }
-                placeholder="Repita sua senha"
+                onChange={update("confirmPassword")}
                 required
               />
             </label>
           )}
 
           <button type="submit" className="primary-submit auth-submit">
-            {authMode === "login" ? "Entrar" : "Cadastrar"}
+            {isLogin ? "Entrar" : "Criar conta"}
           </button>
         </form>
 
-        <p className="auth-hint">
-          {authMode === "login"
-            ? "Entre para acompanhar sua pressão, glicemia, agenda e recompensas."
-            : "Crie sua conta para registrar suas medidas e acumular pontos."}
-        </p>
-
         <div className="auth-switch">
-          <span>
-            {authMode === "login"
-              ? "Ainda não tem conta?"
-              : "Já tem uma conta?"}
-          </span>
-
+          <span>{isLogin ? "Primeira vez aqui?" : "Já tem conta?"}</span>
           <button
             type="button"
             className="link-button"
             onClick={() => {
               setAuthError("");
-              setAuthMode((current) =>
-                current === "login" ? "signup" : "login"
-              );
+              setAuthMode((current) => (current === "login" ? "signup" : "login"));
             }}
           >
-            {authMode === "login" ? "Cadastre-se" : "Fazer login"}
+            {isLogin ? "Criar conta" : "Entrar"}
           </button>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
