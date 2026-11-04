@@ -152,6 +152,11 @@ export default function AuthScreen({ context }) {
             {isLogin ? "Criar conta" : "Entrar"}
           </button>
         </div>
+
+        <p className="auth-legal">
+          Ao entrar, você concorda com a nossa{" "}
+          <a href="/privacidade/" target="_blank" rel="noopener">Política de Privacidade</a>.
+        </p>
       </main>
     </div>
   );
