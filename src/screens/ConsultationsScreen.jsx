@@ -1,169 +1,135 @@
+import { Droplet, HeartPulse } from "lucide-react";
+
+const STATUS_TEXT = {
+  controlada: "Dentro da faixa de referência",
+  atenção: "Um pouco acima da referência",
+  alta: "Acima da referência. Converse com sua equipe de saúde",
+};
+
 export default function ConsultationsScreen({ context }) {
-  const { authMode, authForm, authError, handleAuthSubmit, setAuthForm, setAuthError, setAuthMode, nextAppointment, showDetails, handleQuickAction, daysUntilNextAppointment, nextAppointmentLocation, vitals, handleVitalsSubmit, setVitals, vitalsError, lastVitals, pressureStatus, glucoseStatus, vitalsHistory, selectedCard, points, pendingItems, activeAppointments, MAX_APPOINTMENTS, CoinIcon, totalPointsEarned, agenda, HEALTH_TIPS, limitReached, handleConfirmPresence, handleDeleteAppointment, handleScheduleSubmit, form, setForm, APPOINTMENT_TYPES, getMinDate, availableTimeSlots, RECIFE_HEALTH_LOCATIONS, setSelectedLocationId, setAppointmentError, appointmentError, selectedLocation, nextLevelProgress, rewardsLoaded, isSupabaseEnabled, rewards, handleRedeem } = context;
+  const {
+    vitals,
+    handleVitalsSubmit,
+    setVitals,
+    vitalsError,
+    lastVitals,
+    pressureStatus,
+    glucoseStatus,
+    vitalsHistory,
+  } = context;
+
+  const update = (key) => (event) =>
+    setVitals((current) => ({ ...current, [key]: event.target.value }));
+
   return (
     <>
-
-      <section className="hero-card">
-        <div className="hero-header">
-          <span className="tag">PRÓXIMO ATENDIMENTO</span>
-
-          <button
-            className="mini-button"
-            onClick={() => handleQuickAction("details")}
-          >
-            {showDetails ? "Ocultar detalhes" : "Ver detalhes"}
-          </button>
-        </div>
-
-        <h2>
-          {nextAppointment
-            ? `${nextAppointment.date} - ${nextAppointment.time}`
-            : "Sem atendimento agendado"}
-        </h2>
-
-        <p className="home-location">
-          {nextAppointment
-            ? nextAppointment.location
-            : "Agende sua próxima aferição ou consulta HIPERDIA"}
-        </p>
-
-        {nextAppointment && daysUntilNextAppointment !== null && (
-          <p className="home-countdown">
-            {daysUntilNextAppointment <= 0
-              ? "É hoje!"
-              : daysUntilNextAppointment === 1
-                ? "Falta 1 dia"
-                : `Faltam ${daysUntilNextAppointment} dias`}
-          </p>
-        )}
-
-        {showDetails && (
-          <div className="details-box">
-            <p>
-              {nextAppointment
-                ? "Atendimento agendado. Compareça no horário informado."
-                : "Ainda não há atendimento cadastrado."}
-            </p>
-
-            <p>
-              {nextAppointment
-                ? `${nextAppointment.type} em ${nextAppointment.location}.`
-                : "Abra a agenda para realizar seu primeiro agendamento."}
-            </p>
-
-            {nextAppointmentLocation && (
-              <p>
-                📞 Telefone: {nextAppointmentLocation.phone}
-              </p>
-            )}
+      {lastVitals && (
+        <section className="vitals-summary" aria-label="Última medida">
+          <div className={`vitals-badge ${pressureStatus}`}>
+            <HeartPulse aria-hidden="true" />
+            <div>
+              <small>Pressão</small>
+              <strong>
+                {lastVitals.systolic}/{lastVitals.diastolic}
+                <span className="unit"> mmHg</span>
+              </strong>
+              <p>{STATUS_TEXT[pressureStatus]}</p>
+            </div>
           </div>
-        )}
-      </section>
+
+          {lastVitals.glucose && (
+            <div className={`vitals-badge ${glucoseStatus}`}>
+              <Droplet aria-hidden="true" />
+              <div>
+                <small>Glicemia</small>
+                <strong>
+                  {lastVitals.glucose}
+                  <span className="unit"> mg/dL</span>
+                </strong>
+                <p>{STATUS_TEXT[glucoseStatus]}</p>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="panel">
         <div className="panel-header">
-          <h3>Registrar minhas medidas</h3>
+          <h3>Registrar medida</h3>
         </div>
 
         <form className="vitals-form" onSubmit={handleVitalsSubmit}>
           <div className="field-grid">
             <label>
-              Pressão sistólica
+              Pressão: número de cima
               <input
                 type="number"
                 inputMode="numeric"
-                placeholder="Ex: 120"
+                placeholder="120"
                 value={vitals.systolic}
-                onChange={(event) =>
-                  setVitals((current) => ({
-                    ...current,
-                    systolic: event.target.value,
-                  }))
-                }
+                onChange={update("systolic")}
               />
             </label>
 
             <label>
-              Pressão diastólica
+              Pressão: número de baixo
               <input
                 type="number"
                 inputMode="numeric"
-                placeholder="Ex: 80"
+                placeholder="80"
                 value={vitals.diastolic}
-                onChange={(event) =>
-                  setVitals((current) => ({
-                    ...current,
-                    diastolic: event.target.value,
-                  }))
-                }
+                onChange={update("diastolic")}
               />
             </label>
 
             <label>
-              Glicemia (mg/dL)
+              Glicemia em mg/dL (opcional)
               <input
                 type="number"
                 inputMode="numeric"
-                placeholder="Opcional"
+                placeholder="95"
                 value={vitals.glucose}
-                onChange={(event) =>
-                  setVitals((current) => ({
-                    ...current,
-                    glucose: event.target.value,
-                  }))
-                }
+                onChange={update("glucose")}
               />
             </label>
           </div>
 
           {vitalsError && <p className="location-error">{vitalsError}</p>}
 
-          <button type="submit" className="secondary vitals-submit">
-            Salvar registro
+          <button type="submit" className="primary-submit vitals-submit">
+            Salvar medida
           </button>
+          <p className="form-note">
+            Por enquanto as medidas ficam só neste aparelho e somem ao sair da conta.
+          </p>
         </form>
-
-        {lastVitals && (
-          <div className="vitals-summary">
-            <div className={`vitals-badge ${pressureStatus}`}>
-              <span role="img" aria-label="Pressão">❤</span>
-              <div>
-                <strong>
-                  {lastVitals.systolic}/{lastVitals.diastolic} mmHg
-                </strong>
-                <small>Pressão {pressureStatus}</small>
-              </div>
-            </div>
-
-            {lastVitals.glucose && (
-              <div className={`vitals-badge ${glucoseStatus}`}>
-                <span role="img" aria-label="Glicemia">🩸</span>
-                <div>
-                  <strong>{lastVitals.glucose} mg/dL</strong>
-                  <small>Glicemia {glucoseStatus}</small>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {vitalsHistory.length > 0 && (
-          <div className="vitals-history">
-            <h4>Histórico recente</h4>
-            {vitalsHistory.map((entry) => (
-              <div className="vitals-history-item" key={entry.id}>
-                <span>{entry.recordedAt}</span>
-                <strong>
-                  {entry.systolic}/{entry.diastolic} mmHg
-                  {entry.glucose ? ` · ${entry.glucose} mg/dL` : ""}
-                </strong>
-              </div>
-            ))}
-          </div>
-        )}
       </section>
 
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Histórico</h3>
+        </div>
 
+        {vitalsHistory.length === 0 ? (
+          <p className="empty-state">
+            Quando você salvar uma medida, ela aparece aqui com data e horário.
+          </p>
+        ) : (
+          <ul className="row-list">
+            {vitalsHistory.map((entry) => (
+              <li className="row-item" key={entry.id}>
+                <div className="row-main">
+                  <strong>
+                    {entry.systolic}/{entry.diastolic} mmHg
+                    {entry.glucose ? ` · ${entry.glucose} mg/dL` : ""}
+                  </strong>
+                </div>
+                <span className="row-meta">{entry.recordedAt}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </>
   );
 }

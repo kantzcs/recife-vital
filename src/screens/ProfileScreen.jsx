@@ -15,10 +15,10 @@ export default function ProfileScreen({ onNameSaved }) {
     let active = true;
     async function load() {
       try {
-        if (!supabase) throw new Error("Conexão com o Supabase indisponível.");
+        if (!supabase) throw new Error("O app está sem conexão com o servidor no momento.");
         const { data: auth, error: authError } = await supabase.auth.getUser();
         if (authError) throw authError;
-        if (!auth.user) throw new Error("Entre novamente para acessar seu perfil.");
+        if (!auth.user) throw new Error("Sua sessão expirou. Entre de novo pra ver seu perfil.");
         const { data, error: profileError } = await supabase.from("profiles")
           .select("name,phone,birth_date,emergency_name,emergency_phone,emergency_relationship")
           .eq("id", auth.user.id).single();
@@ -32,29 +32,31 @@ export default function ProfileScreen({ onNameSaved }) {
     load(); return () => { active = false; };
   }, []);
   async function save(event) {
-    event.preventDefault(); setError(""); setMessage(""); setBusy(true);
+    event.preventDefault();
+    if (!editing || busy) return;
+    setError(""); setMessage(""); setBusy(true);
     try {
-      if (!supabase || !userId) throw new Error("Perfil indisponível. Entre novamente.");
-      if (!form.name.trim()) throw new Error("Informe seu nome.");
+      if (!supabase || !userId) throw new Error("Sua sessão expirou. Entre de novo pra salvar.");
+      if (!form.name.trim()) throw new Error("O nome não pode ficar vazio.");
       const payload = { ...form, name: form.name.trim(), birth_date: form.birth_date || null };
       const { data, error: writeError } = await supabase.from("profiles").update(payload)
         .eq("id", userId).select("name,phone,birth_date,emergency_name,emergency_phone,emergency_relationship").single();
       if (writeError) throw writeError;
       const values = Object.fromEntries(Object.keys(empty).map(key => [key, data[key] ?? ""]));
-      setForm(values); setSaved(values); setEditing(false); setMessage("Alterações salvas.");
+      setForm(values); setSaved(values); setEditing(false); setMessage("Perfil atualizado.");
       onNameSaved?.(data.name);
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   }
   const field = (key, label, type = "text") => <label>{label}<input type={type} value={form[key]} disabled={!editing || busy} onChange={e => setForm(current => ({ ...current, [key]: e.target.value }))} /></label>;
   return <section className="panel rv-account">
-    <h2>Meu perfil</h2><p>{email}</p>
+    <div className="profile-head"><span className="profile-avatar" aria-hidden="true">{(form.name || email || "?").trim().charAt(0).toUpperCase()}</span><div><h2>{saved.name || "Seu perfil"}</h2><p>{email}</p></div></div>
     {error && <p role="alert" className="location-error">{error}</p>}
-    {message && <p role="status">{message}</p>}
-    {busy && <p role="status">Aguarde...</p>}
+    {message && <p role="status" className="success-line">{message}</p>}
+    {busy && !editing && <p role="status" className="muted-line">Carregando…</p>}
     <form onSubmit={save}>
-      <h3>Dados pessoais</h3><div className="rv-account-grid">{field("name", "Nome")}{field("phone", "Telefone", "tel")}{field("birth_date", "Data de nascimento", "date")}</div>
-      <h3>Contato de emergência</h3><div className="rv-account-grid">{field("emergency_name", "Nome do contato")}{field("emergency_phone", "Telefone do contato", "tel")}{field("emergency_relationship", "Parentesco")}</div>
+      <h3>Seus dados</h3><div className="rv-account-grid">{field("name", "Nome")}{field("phone", "Telefone", "tel")}{field("birth_date", "Data de nascimento", "date")}</div>
+      <h3>Em caso de emergência, avisar</h3><p className="form-note">Quem a equipe de saúde deve chamar se precisar.</p><div className="rv-account-grid">{field("emergency_name", "Nome")}{field("emergency_phone", "Telefone", "tel")}{field("emergency_relationship", "Parentesco")}</div>
       <div className="rv-account-actions">
   <button
     key="edit-profile"
@@ -69,7 +71,7 @@ export default function ProfileScreen({ onNameSaved }) {
       setEditing(true);
     }}
   >
-    Editar perfil
+    Editar dados
   </button>
 
   <button
@@ -79,7 +81,7 @@ export default function ProfileScreen({ onNameSaved }) {
     hidden={!editing}
     disabled={busy || !editing}
   >
-    {busy ? "Salvando..." : "Salvar alterações"}
+    {busy ? "Salvando…" : "Salvar"}
   </button>
 
   <button

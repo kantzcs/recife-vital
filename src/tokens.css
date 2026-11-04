@@ -1,0 +1,71 @@
+/* Recife Vital — tokens de design
+   Toda cor, fonte, tamanho e espaçamento do app sai daqui.
+   Para mudar a identidade visual, altere este arquivo. */
+
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Public+Sans:wght@400;500;600;700&display=swap");
+
+:root {
+  color-scheme: light;
+
+  /* Fontes: uma para títulos, uma para leitura */
+  --font-display: "Bricolage Grotesque", Georgia, serif;
+  --font-body: "Public Sans", -apple-system, "Segoe UI", Arial, sans-serif;
+
+  /* Marca */
+  --brand: #126457;        /* verde profundo */
+  --brand-dark: #0b4a40;
+  --brand-light: #e6f2ec;  /* verde suave */
+  --brand-border: #b9d9cb;
+  --gold: #e8b44c;         /* fichas vitais */
+  --gold-dark: #8a6514;
+  --gold-light: #fbf1dc;
+
+  /* Estados */
+  --success: #1d6b3a;
+  --success-light: #e8f4ec;
+  --warning: #8a5a00;
+  --warning-light: #fdf3dd;
+  --danger: #a8322d;
+  --danger-light: #fbeceb;
+
+  /* Texto e neutros (puxados para o verde, nunca cinza puro) */
+  --ink-900: #182d29;
+  --ink-700: #3a4f4a;
+  --ink-500: #62756f;
+  --ink-300: #b5c3be;
+  --ink-100: #e3eae6;
+  --ink-50: #f7f9f6;       /* fundo das telas */
+
+  --surface: #ffffff;
+  --surface-2: #f1f5f2;
+  --border: #e0e7e2;
+
+  /* Sombras quase invisíveis: a separação vem da cor de fundo */
+  --shadow-sm: 0 1px 2px rgba(24, 45, 41, 0.05);
+  --shadow-md: 0 8px 24px rgba(24, 45, 41, 0.08);
+
+  /* Raios: cada um tem um papel */
+  --r-sm: 6px;     /* chips, campos pequenos */
+  --r-md: 10px;    /* botões e campos */
+  --r-lg: 14px;    /* cartões */
+  --r-pill: 999px; /* só para selos */
+
+  /* Espaçamento em base 4 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* Escala de fonte fixa: 12 · 14 · 16 · 20 · 28 · 40 */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-base: 1rem;
+  --fs-md: 1.25rem;
+  --fs-lg: 1.75rem;
+  --fs-xl: 2.5rem;
+
+  --nav-height: 72px;
+}

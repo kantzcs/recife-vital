@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
+import "./tokens.css";
 import "./styles.css";
-import "./notifications.css";
+import "./theme.css";
+import { Activity, Bus, BookOpen, CalendarDays, Check, Coins, House, UserRound, Clapperboard, Droplet, Footprints, HeartPulse, MoreVertical, Pill, Salad } from "lucide-react";
+import { formatAppointment } from "./lib/format.js";
 import ProfileScreen from "./screens/ProfileScreen.jsx";
 import AccountMenu from "./components/AccountMenu.jsx";
 import AuthScreen from "./screens/AuthScreen.jsx";
@@ -9,7 +12,6 @@ import HomeScreen from "./screens/HomeScreen.jsx";
 import AgendaScreen from "./screens/AgendaScreen.jsx";
 import RewardsScreen from "./screens/RewardsScreen.jsx";
 import ConsultationsScreen from "./screens/ConsultationsScreen.jsx";
-import "./canva.css";
 
 const MAX_APPOINTMENTS = 4;
 
@@ -18,22 +20,25 @@ const initialAgenda = [];
 const initialRewards = [
   {
     id: 1,
-    icon: "🚌",
+    icon: Bus,
     title: "Crédito no VEM",
+    detail: "Recarga no cartão de transporte",
     cost: 200,
     redeemed: false,
   },
   {
     id: 2,
-    icon: "🎬",
-    title: "Ingresso Cinema/Teatro",
+    icon: Clapperboard,
+    title: "Ingresso de cinema ou teatro",
+    detail: "Sessão em espaço cultural da cidade",
     cost: 150,
     redeemed: false,
   },
   {
     id: 3,
-    icon: "📚",
-    title: "Vaga em Curso COMPAZ",
+    icon: BookOpen,
+    title: "Vaga em curso no Compaz",
+    detail: "Cursos livres nos centros Compaz",
     cost: 300,
     redeemed: false,
   },
@@ -85,37 +90,45 @@ const APPOINTMENT_TYPES = [
 const HEALTH_TIPS = [
   {
     id: 1,
-    icon: "❤",
+    icon: HeartPulse,
     title: "Meça a pressão regularmente",
-    text: "Pessoas com hipertensão devem aferir a pressão em pelo menos duas ocasiões e anotar os valores para levar à consulta.",
+    text: "Anote cada aferição com data e horário. Levar esse histórico pra consulta ajuda o médico a ajustar o tratamento.",
   },
   {
     id: 2,
-    icon: "🩸",
-    title: "Monitore a glicemia",
-    text: "Registre os valores de glicemia de jejum e pós-refeição; a meta usual é até 126 mg/dL em jejum.",
+    icon: Droplet,
+    title: "Registre a glicemia",
+    text: "Anote se foi em jejum ou depois de comer. O mesmo número significa coisas diferentes em cada caso.",
   },
   {
     id: 3,
-    icon: "🍽",
+    icon: Salad,
     title: "Monte um prato equilibrado",
-    text: "Metade do prato com vegetais, um quarto com proteína magra e um quarto com carboidratos integrais ajuda a controlar pressão e glicemia juntas.",
+    text: "Metade do prato com verduras e legumes, um quarto com proteína e um quarto com arroz, feijão ou outro carboidrato.",
   },
   {
     id: 4,
-    icon: "🚶",
-    title: "Movimente-se todos os dias",
-    text: "30 minutos de caminhada a maior parte dos dias da semana auxiliam no controle de ambas as condições.",
+    icon: Footprints,
+    title: "Mexa o corpo todo dia",
+    text: "Uma caminhada de 30 minutos na maior parte da semana já ajuda no controle da pressão e da glicemia.",
   },
   {
     id: 5,
-    icon: "💊",
-    title: "Não interrompa a medicação",
-    text: "Tome os medicamentos nos horários indicados, mesmo se sentir bem, e nunca interrompa sem orientação médica.",
+    icon: Pill,
+    title: "Não pare o remédio por conta própria",
+    text: "Mesmo se estiver se sentindo bem, tome nos horários certos e só mude com orientação médica.",
   },
 ];
 
-const tabs = ["Início", "Agenda", "Consultas", "Recompensas", "Perfil"];
+const TAB_ICONS = {
+  Início: House,
+  Agenda: CalendarDays,
+  Medidas: Activity,
+  Recompensas: Coins,
+  Perfil: UserRound,
+};
+
+const tabs = ["Início", "Agenda", "Medidas", "Recompensas", "Perfil"];
 
 const OPENING_HOUR = 7;
 const CLOSING_HOUR = 22;
@@ -145,37 +158,20 @@ const mapSupabaseAppointment = (appointment) => ({
   confirmed: Boolean(appointment.confirmed),
 });
 
-const CoinIcon = ({ size = 22 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    aria-hidden="true"
-    role="img"
-  >
-    <circle cx="12" cy="12" r="9.5" fill="#F4B400" stroke="#C98A06" strokeWidth="1.5" />
-    <circle cx="12" cy="12" r="6.8" fill="none" stroke="#C98A06" strokeWidth="1" strokeDasharray="1.4 1.6" />
-    <text
-      x="12"
-      y="15.5"
-      textAnchor="middle"
-      fontSize="9"
-      fontWeight="800"
-      fill="#7A5300"
-      fontFamily="Sora, sans-serif"
-    >
-      RV
-    </text>
-  </svg>
-);
 
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [visualNotice, setVisualNotice] = useState(null);
   const notify = (message) => setVisualNotice(message);
+
+  useEffect(() => {
+    if (!visualNotice) return undefined;
+    const timer = setTimeout(() => setVisualNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [visualNotice]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [authMode, setAuthMode] = useState("login");
   const [authForm, setAuthForm] = useState({
     name: "",
@@ -342,7 +338,7 @@ export default function App() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      setAppointmentError("Não foi possível carregar seus agendamentos.");
+      setAppointmentError("Não conseguimos carregar sua agenda. Atualize a página para tentar de novo.");
       return;
     }
 
@@ -363,7 +359,7 @@ export default function App() {
 
     if (error) {
       setAppointmentError(
-        "Não foi possível carregar seus pontos. Verifique a tabela user_rewards no Supabase."
+        "Não conseguimos carregar suas fichas vitais. Atualize a página."
       );
       setRewardsLoaded(true);
       return;
@@ -380,7 +376,7 @@ export default function App() {
 
       if (insertError) {
         setAppointmentError(
-          "Não foi possível criar seu saldo. Verifique as políticas da tabela user_rewards."
+          "Não conseguimos abrir seu saldo de fichas. Tente entrar de novo."
         );
       }
 
@@ -408,7 +404,7 @@ export default function App() {
 
   const saveRewardsToSupabase = async (nextPoints, nextRewards) => {
     if (!isSupabaseEnabled || !supabase || !profileId) {
-      setAppointmentError("Sessão ou perfil indisponível. Não foi possível salvar.");
+      setAppointmentError("Sua sessão expirou. Entre de novo para salvar.");
       return false;
     }
 
@@ -430,7 +426,7 @@ export default function App() {
 
     if (error) {
       setAppointmentError(
-        "Não foi possível salvar os pontos no Supabase. Tente novamente."
+        "Não conseguimos salvar suas fichas. Nada mudou no saldo; tente de novo."
       );
       return false;
     }
@@ -448,7 +444,7 @@ export default function App() {
       .maybeSingle();
 
     if (profileError) {
-      setAuthError("Não foi possível acessar o perfil no Supabase.");
+      setAuthError("Não conseguimos abrir seu perfil. Tente entrar de novo.");
       return;
     }
 
@@ -460,7 +456,7 @@ export default function App() {
       });
 
       if (insertError) {
-        setAuthError("Não foi possível criar o perfil no Supabase.");
+        setAuthError("Sua conta foi criada, mas o perfil não. Tente entrar de novo.");
         return;
       }
     }
@@ -472,46 +468,88 @@ export default function App() {
 
   useEffect(() => {
     const checkSession = async () => {
-      if (!isSupabaseEnabled || !supabase) return;
+      // Volta do Google com erro (ex.: a pessoa cancelou na tela de contas).
+      const params = new URLSearchParams(
+        window.location.search || window.location.hash.replace(/^#/, "")
+      );
+      const oauthError = params.get("error_description") || params.get("error");
+      const cameFromRedirect = ["code", "access_token", "error"].some((key) => params.has(key));
+
+      if (cameFromRedirect) {
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+
+      if (oauthError) {
+        setAuthError("Não deu pra entrar com o Google. Tente de novo ou use e-mail e senha.");
+      }
+
+      if (!isSupabaseEnabled || !supabase) {
+        setSessionChecked(true);
+        return;
+      }
 
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
-      if (!session?.user) return;
+      if (!session?.user) {
+        setSessionChecked(true);
+        return;
+      }
 
       const user = session.user;
+      // O Google manda o nome em "name" ou "full_name".
+      const displayName = user.user_metadata?.name || user.user_metadata?.full_name || "";
 
       setAuthForm((current) => ({
         ...current,
         email: user.email ?? "",
-        name: user.user_metadata?.name ?? "",
+        name: displayName,
       }));
 
-      await ensureSupabaseProfile(
-        user.id,
-        user.user_metadata?.name,
-        user.email
-      );
+      await ensureSupabaseProfile(user.id, displayName, user.email);
 
       setIsLoggedIn(true);
+      setSessionChecked(true);
     };
 
     checkSession();
   }, [isSupabaseEnabled]);
+
+  const handleGoogleLogin = async () => {
+    setAuthError("");
+
+    if (!isSupabaseEnabled || !supabase) {
+      setAuthError("O app está sem conexão com o servidor no momento.");
+      return;
+    }
+
+    setGoogleBusy(true);
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/` },
+    });
+
+    // Se deu certo, o navegador já foi pro Google e esta linha não importa.
+    if (error) {
+      setAuthError("Não deu pra abrir o login do Google. Tente de novo.");
+      setGoogleBusy(false);
+    }
+  };
 
   const handleAuthSubmit = async (event) => {
     event.preventDefault();
     setAuthError("");
 
     if (!authForm.email.trim() || !authForm.password) {
-      setAuthError("Informe e-mail e senha para continuar.");
+      setAuthError("Preencha e-mail e senha.");
       return;
     }
 
     if (authMode === "signup") {
       if (!authForm.name.trim() || !authForm.confirmPassword) {
-        setAuthError("Preencha todos os campos para criar a conta.");
+        setAuthError("Preencha todos os campos pra criar sua conta.");
         return;
       }
 
@@ -522,7 +560,7 @@ export default function App() {
     }
 
     if (!isSupabaseEnabled || !supabase) {
-      setAuthError("A conexão com o Supabase não está configurada.");
+      setAuthError("O app está sem conexão com o servidor no momento.");
       return;
     }
 
@@ -544,7 +582,7 @@ export default function App() {
         }
 
         if (!data.session) {
-          setAuthError("Cadastro recebido. Confirme seu e-mail antes de entrar.");
+          setAuthError("Conta criada. Confirme seu e-mail pelo link que enviamos e depois entre aqui.");
           setAuthMode("login");
           setAuthForm((current) => ({ ...current, password: "", confirmPassword: "" }));
           return;
@@ -601,7 +639,7 @@ export default function App() {
         setIsLoggedIn(true);
       }
     } catch {
-      setAuthError("Não foi possível conectar ao Supabase.");
+      setAuthError("Não conseguimos conectar. Confira sua internet e tente de novo.");
     }
   };
 
@@ -609,7 +647,7 @@ export default function App() {
     if (isSupabaseEnabled && supabase) {
       const { error } = await supabase.auth.signOut();
       if (error) {
-        setAppointmentError(`Não foi possível sair: ${error.message}`);
+        setAppointmentError("Não conseguimos encerrar sua sessão. Tente de novo.");
         setMenuOpen(false);
         return;
       }
@@ -658,6 +696,11 @@ export default function App() {
       return;
     }
 
+    if (action === "vitals") {
+      setActiveTab("Medidas");
+      return;
+    }
+
     setActiveTab("Início");
   };
 
@@ -667,24 +710,27 @@ export default function App() {
 
     if (!form.date || !form.time || !selectedLocation) {
       openConfirmation("validation", {
-        title: "Dados incompletos",
-        message:
-          "Informe data, horário e selecione uma UPA da lista antes de confirmar.",
+        title: "Faltou alguma coisa",
+        message: "Escolha a data, o horário e a UPA antes de continuar.",
+        confirmLabel: "Entendi",
+        single: true,
       });
       return;
     }
 
     if (!isDateTimeValid(form.date, form.time)) {
       setAppointmentError(
-        "A data e o horário devem ser posteriores ao momento atual."
+        "Esse horário já passou. Escolha um horário a partir de agora."
       );
       return;
     }
 
     if (limitReached) {
       openConfirmation("limit", {
-        title: "Limite de consultas atingido",
-        message: `Você já possui ${activeAppointments} atendimentos ativos. Exclua um para criar outro.`,
+        title: "Agenda cheia",
+        message: `Você já tem ${activeAppointments} atendimentos marcados, o máximo permitido. Conclua ou remova um pra marcar outro.`,
+        confirmLabel: "Entendi",
+        single: true,
       });
       return;
     }
@@ -695,8 +741,9 @@ export default function App() {
     const earnedPoints = selectedType ? selectedType.points : 30;
 
     openConfirmation("schedule", {
-      title: "Confirmar agendamento",
-      message: `Deseja criar ${form.type} para ${formatDate(form.date)} às ${form.time}?`,
+      title: "Marcar atendimento?",
+      message: `${form.type} na ${selectedLocation.name}, ${formatAppointment(formatDate(form.date), form.time, { inline: true })}. Isso fica registrado no app; a UPA não recebe esse agendamento automaticamente.`,
+      confirmLabel: "Marcar",
       payload: {
         type: form.type,
         date: formatDate(form.date),
@@ -714,8 +761,9 @@ export default function App() {
 
     openConfirmation("presence", {
       id,
-      title: "Confirmar presença",
-      message: `Deseja confirmar sua presença em ${selected.type} de ${selected.date}? Você receberá ${selected.points} pontos.`,
+      title: "Você foi ao atendimento?",
+      message: `${selected.type}, ${formatAppointment(selected.date, selected.time, { inline: true })}. Ao confirmar, você ganha ${selected.points} fichas vitais.`,
+      confirmLabel: "Sim, eu fui",
     });
   };
 
@@ -726,8 +774,10 @@ export default function App() {
 
     openConfirmation("delete", {
       id,
-      title: "Excluir agendamento",
-      message: `Essa ação remove ${selected.type} de ${selected.date} e não pode ser desfeita.`,
+      title: "Remover atendimento?",
+      message: `${selected.type}, ${formatAppointment(selected.date, selected.time, { inline: true })}, sai da sua agenda. Não dá pra desfazer.`,
+      confirmLabel: "Remover",
+      danger: true,
     });
   };
 
@@ -755,7 +805,7 @@ export default function App() {
       setPoints(points);
       setRewards(rewards);
     } else {
-      notify("Resgate salvo.");
+      notify("Resgate feito. As fichas já saíram do seu saldo.");
     }
   };
 
@@ -768,12 +818,12 @@ export default function App() {
     const glucose = vitals.glucose ? Number(vitals.glucose) : null;
 
     if (!systolic || !diastolic) {
-      setVitalsError("Informe ao menos a pressão sistólica e a diastólica.");
+      setVitalsError("Preencha os dois números da pressão.");
       return;
     }
 
     if (systolic < 60 || systolic > 260 || diastolic < 40 || diastolic > 160) {
-      setVitalsError("Verifique os valores de pressão informados.");
+      setVitalsError("Esses valores de pressão parecem fora do normal. Confira se digitou certo.");
       return;
     }
 
@@ -798,7 +848,7 @@ export default function App() {
     if (!confirmation) return;
     if (["schedule", "presence", "delete"].includes(confirmation.type) &&
         (!isSupabaseEnabled || !supabase || !profileId)) {
-      setAppointmentError("Sessão ou perfil indisponível. A operação não foi salva.");
+      setAppointmentError("Sua sessão expirou. Entre de novo; nada foi salvo.");
       setConfirmation(null);
       return;
     }
@@ -825,7 +875,7 @@ export default function App() {
 
         if (error) {
           setAppointmentError(
-            "Não foi possível confirmar a presença no Supabase."
+            "Não conseguimos confirmar a presença. Tente de novo."
           );
           setConfirmation(null);
           return;
@@ -855,7 +905,7 @@ export default function App() {
         await syncAgendaFromSupabase(profileId);
       }
 
-      notify("Presença registrada.");
+      notify("Presença confirmada. As fichas entraram no seu saldo.");
       setConfirmation(null);
       return;
     }
@@ -870,7 +920,7 @@ export default function App() {
 
         if (error) {
           setAppointmentError(
-            "Não foi possível excluir o agendamento no Supabase."
+            "Não conseguimos remover o atendimento. Tente de novo."
           );
           setConfirmation(null);
           return;
@@ -911,7 +961,7 @@ export default function App() {
 
         if (error) {
           setAppointmentError(
-            "Não foi possível salvar o agendamento no Supabase."
+            "Não conseguimos marcar o atendimento. Confira sua internet e tente de novo."
           );
           setConfirmation(null);
           return;
@@ -925,7 +975,7 @@ export default function App() {
         setAgenda((current) => [nextItem, ...current]);
       }
 
-      notify("Agendamento salvo no aplicativo.");
+      notify("Atendimento marcado na sua agenda.");
       setActiveTab("Agenda");
       setSelectedCard("agenda");
       setForm({
@@ -946,7 +996,20 @@ export default function App() {
 
 
 
-  const context = { authMode, authForm, authError, handleAuthSubmit, setAuthForm, setAuthError, setAuthMode, nextAppointment, showDetails, handleQuickAction, daysUntilNextAppointment, nextAppointmentLocation, vitals, handleVitalsSubmit, setVitals, vitalsError, lastVitals, pressureStatus, glucoseStatus, vitalsHistory, selectedCard, points, pendingItems, activeAppointments, MAX_APPOINTMENTS, CoinIcon, totalPointsEarned, agenda, HEALTH_TIPS, limitReached, handleConfirmPresence, handleDeleteAppointment, handleScheduleSubmit, form, setForm, APPOINTMENT_TYPES, getMinDate, availableTimeSlots, RECIFE_HEALTH_LOCATIONS, setSelectedLocationId, setAppointmentError, appointmentError, selectedLocation, nextLevelProgress, rewardsLoaded, isSupabaseEnabled, rewards, handleRedeem };
+  const userName = (authForm.name || "").trim().split(" ")[0];
+
+  const context = { userName, handleGoogleLogin, googleBusy, authMode, authForm, authError, handleAuthSubmit, setAuthForm, setAuthError, setAuthMode, nextAppointment, showDetails, handleQuickAction, daysUntilNextAppointment, nextAppointmentLocation, vitals, handleVitalsSubmit, setVitals, vitalsError, lastVitals, pressureStatus, glucoseStatus, vitalsHistory, selectedCard, points, pendingItems, activeAppointments, MAX_APPOINTMENTS, totalPointsEarned, agenda, HEALTH_TIPS, limitReached, handleConfirmPresence, handleDeleteAppointment, handleScheduleSubmit, form, setForm, APPOINTMENT_TYPES, getMinDate, availableTimeSlots, RECIFE_HEALTH_LOCATIONS, setSelectedLocationId, setAppointmentError, appointmentError, selectedLocation, nextLevelProgress, rewardsLoaded, isSupabaseEnabled, rewards, handleRedeem };
+
+  if (!sessionChecked) {
+    return (
+      <div className="splash" role="status" aria-live="polite">
+        <span className="brand-mark" aria-hidden="true">
+          <HeartPulse size={22} strokeWidth={2.25} />
+        </span>
+        <span className="sr-only">Abrindo o Recife Vital…</span>
+      </div>
+    );
+  }
 
   if (!isLoggedIn) {
     return <AuthScreen context={context} />;
@@ -955,23 +1018,22 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">Recife Vital · HIPERDIA</p>
-          <button
-            type="button"
-            className="rv-menu-button"
-            aria-label="Abrir configurações"
-            aria-haspopup="dialog"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            ⋮
-          </button>
-          <h1>recife <span>VITAL</span></h1>
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">
+            <HeartPulse size={20} strokeWidth={2.25} />
+          </span>
+          <span className="brand-name">Recife Vital</span>
         </div>
 
-        <button className="logout-btn" onClick={handleLogout}>
-          Sair
+        <button
+          type="button"
+          className="rv-menu-button"
+          aria-label="Abrir configurações"
+          aria-haspopup="dialog"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <MoreVertical size={22} />
         </button>
       </header>
 
@@ -983,25 +1045,30 @@ export default function App() {
       )}
 
       <nav className="tab-nav" aria-label="Navegação principal">
-        {tabs.map((tab) => (
-          <button
-            key={tab}
-            className={activeTab === tab ? "tab active" : "tab"}
-            type="button"
-            onClick={() => {
-              setMenuOpen(false);
-              setActiveTab(tab);
-            }}
-          >
-            {tab}
-          </button>
-        ))}
+        {tabs.map((tab) => {
+          const TabIcon = TAB_ICONS[tab];
+          return (
+            <button
+              key={tab}
+              className={activeTab === tab ? "tab active" : "tab"}
+              type="button"
+              aria-current={activeTab === tab ? "page" : undefined}
+              onClick={() => {
+                setMenuOpen(false);
+                setActiveTab(tab);
+              }}
+            >
+              <span className="tab-icon" aria-hidden="true"><TabIcon /></span>
+              {tab}
+            </button>
+          );
+        })}
       </nav>
 
       <main className="content">
         {activeTab === "Início" && <HomeScreen context={context} />}
         {appointmentError && <p role="alert" className="location-error">{appointmentError}</p>}
-        {activeTab === "Consultas" && <ConsultationsScreen context={context} />}
+        {activeTab === "Medidas" && <ConsultationsScreen context={context} />}
         {activeTab === "Perfil" && (
           <ProfileScreen
             onNameSaved={(name) =>
@@ -1015,9 +1082,9 @@ export default function App() {
 
       {visualNotice && (
         <div className="rv-notice" role="status" aria-live="polite">
-          <span className="rv-notice-icon" aria-hidden="true">✓</span>
-          <div><strong>Confirmação</strong><p>{visualNotice}</p></div>
-          <button type="button" onClick={() => setVisualNotice(null)} aria-label="Fechar confirmação">Entendi</button>
+          <span className="rv-notice-icon" aria-hidden="true"><Check size={18} strokeWidth={2.5} /></span>
+          <p>{visualNotice}</p>
+          <button type="button" onClick={() => setVisualNotice(null)}>Fechar</button>
         </div>
       )}
 
@@ -1034,18 +1101,20 @@ export default function App() {
             <p>{confirmation.message}</p>
 
             <div className="modal-actions">
-              <button
-                className="ghost"
-                onClick={() => setConfirmation(null)}
-              >
-                Cancelar
-              </button>
+              {!confirmation.single && (
+                <button
+                  className="ghost"
+                  onClick={() => setConfirmation(null)}
+                >
+                  Voltar
+                </button>
+              )}
 
               <button
-                className="primary-submit"
+                className={confirmation.danger ? "primary-submit danger" : "primary-submit"}
                 onClick={handleConfirmationAction}
               >
-                Confirmar
+                {confirmation.confirmLabel ?? "Confirmar"}
               </button>
             </div>
           </div>
