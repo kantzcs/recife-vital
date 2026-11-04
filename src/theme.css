@@ -782,6 +782,55 @@ textarea {
   font-size: var(--fs-sm);
 }
 
+.auth-error {
+  margin-bottom: var(--space-4);
+}
+
+.google-button {
+  font-size: var(--fs-base);
+}
+
+.google-button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+/* ---------- Abertura (enquanto confere a sessão) ---------- */
+
+.splash {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-items: center;
+}
+
+.splash .brand-mark {
+  width: 48px;
+  height: 48px;
+  animation: rv-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes rv-pulse {
+  50% {
+    opacity: 0.55;
+    transform: scale(0.94);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash .brand-mark {
+    animation: none;
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 /* ---------- Menu de configurações ---------- */
 
 .confirmation-modal {

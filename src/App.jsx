@@ -170,6 +170,8 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [visualNotice]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [authMode, setAuthMode] = useState("login");
   const [authForm, setAuthForm] = useState({
     name: "",
@@ -466,33 +468,75 @@ export default function App() {
 
   useEffect(() => {
     const checkSession = async () => {
-      if (!isSupabaseEnabled || !supabase) return;
+      // Volta do Google com erro (ex.: a pessoa cancelou na tela de contas).
+      const params = new URLSearchParams(
+        window.location.search || window.location.hash.replace(/^#/, "")
+      );
+      const oauthError = params.get("error_description") || params.get("error");
+      const cameFromRedirect = ["code", "access_token", "error"].some((key) => params.has(key));
+
+      if (cameFromRedirect) {
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+
+      if (oauthError) {
+        setAuthError("Não deu pra entrar com o Google. Tente de novo ou use e-mail e senha.");
+      }
+
+      if (!isSupabaseEnabled || !supabase) {
+        setSessionChecked(true);
+        return;
+      }
 
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
-      if (!session?.user) return;
+      if (!session?.user) {
+        setSessionChecked(true);
+        return;
+      }
 
       const user = session.user;
+      // O Google manda o nome em "name" ou "full_name".
+      const displayName = user.user_metadata?.name || user.user_metadata?.full_name || "";
 
       setAuthForm((current) => ({
         ...current,
         email: user.email ?? "",
-        name: user.user_metadata?.name ?? "",
+        name: displayName,
       }));
 
-      await ensureSupabaseProfile(
-        user.id,
-        user.user_metadata?.name,
-        user.email
-      );
+      await ensureSupabaseProfile(user.id, displayName, user.email);
 
       setIsLoggedIn(true);
+      setSessionChecked(true);
     };
 
     checkSession();
   }, [isSupabaseEnabled]);
+
+  const handleGoogleLogin = async () => {
+    setAuthError("");
+
+    if (!isSupabaseEnabled || !supabase) {
+      setAuthError("O app está sem conexão com o servidor no momento.");
+      return;
+    }
+
+    setGoogleBusy(true);
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+
+    // Se deu certo, o navegador já foi pro Google e esta linha não importa.
+    if (error) {
+      setAuthError("Não deu pra abrir o login do Google. Tente de novo.");
+      setGoogleBusy(false);
+    }
+  };
 
   const handleAuthSubmit = async (event) => {
     event.preventDefault();
@@ -954,7 +998,18 @@ export default function App() {
 
   const userName = (authForm.name || "").trim().split(" ")[0];
 
-  const context = { userName, authMode, authForm, authError, handleAuthSubmit, setAuthForm, setAuthError, setAuthMode, nextAppointment, showDetails, handleQuickAction, daysUntilNextAppointment, nextAppointmentLocation, vitals, handleVitalsSubmit, setVitals, vitalsError, lastVitals, pressureStatus, glucoseStatus, vitalsHistory, selectedCard, points, pendingItems, activeAppointments, MAX_APPOINTMENTS, totalPointsEarned, agenda, HEALTH_TIPS, limitReached, handleConfirmPresence, handleDeleteAppointment, handleScheduleSubmit, form, setForm, APPOINTMENT_TYPES, getMinDate, availableTimeSlots, RECIFE_HEALTH_LOCATIONS, setSelectedLocationId, setAppointmentError, appointmentError, selectedLocation, nextLevelProgress, rewardsLoaded, isSupabaseEnabled, rewards, handleRedeem };
+  const context = { userName, handleGoogleLogin, googleBusy, authMode, authForm, authError, handleAuthSubmit, setAuthForm, setAuthError, setAuthMode, nextAppointment, showDetails, handleQuickAction, daysUntilNextAppointment, nextAppointmentLocation, vitals, handleVitalsSubmit, setVitals, vitalsError, lastVitals, pressureStatus, glucoseStatus, vitalsHistory, selectedCard, points, pendingItems, activeAppointments, MAX_APPOINTMENTS, totalPointsEarned, agenda, HEALTH_TIPS, limitReached, handleConfirmPresence, handleDeleteAppointment, handleScheduleSubmit, form, setForm, APPOINTMENT_TYPES, getMinDate, availableTimeSlots, RECIFE_HEALTH_LOCATIONS, setSelectedLocationId, setAppointmentError, appointmentError, selectedLocation, nextLevelProgress, rewardsLoaded, isSupabaseEnabled, rewards, handleRedeem };
+
+  if (!sessionChecked) {
+    return (
+      <div className="splash" role="status" aria-live="polite">
+        <span className="brand-mark" aria-hidden="true">
+          <HeartPulse size={22} strokeWidth={2.25} />
+        </span>
+        <span className="sr-only">Abrindo o Recife Vital…</span>
+      </div>
+    );
+  }
 
   if (!isLoggedIn) {
     return <AuthScreen context={context} />;
