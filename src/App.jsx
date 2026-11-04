@@ -528,7 +528,7 @@ export default function App() {
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo: `${window.location.origin}/` },
     });
 
     // Se deu certo, o navegador já foi pro Google e esta linha não importa.
